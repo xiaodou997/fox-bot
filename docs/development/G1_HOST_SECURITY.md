@@ -4,6 +4,7 @@
 - 范围：G1c 开发增量；不是完整 G1 Freeze，不是已具备真实聊天值守能力的产品发布。
 - 前置：[G1a](G1_RUNTIME.md) · [G1b](G1_HTTP_PROVIDER.md)
 - 关联：[基线](../design/BASELINE.md) · [适配矩阵](../adapters/CAPABILITY_MATRIX.md) · [验收清单](../acceptance/ACCEPTANCE_CHECKLIST.md)
+- 实际结果：[G1c 本地验收回执](../acceptance/receipts/2026-09-28-g1c-host.md)，记录完整被测提交、失败与修正和未执行门禁。
 
 ## 1. 本轮可以运行什么
 
