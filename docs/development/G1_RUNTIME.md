@@ -3,6 +3,7 @@
 - 日期：2026-09-28
 - 范围：G1 的第一个可运行切片，不是完整 G1 Freeze。
 - 关联：[设计基线](../design/BASELINE.md) · [验收清单](../acceptance/ACCEPTANCE_CHECKLIST.md) · [矩阵](../adapters/CAPABILITY_MATRIX.md)
+- 实际结果：[G1a 本地验收回执](../acceptance/receipts/2026-09-28-g1a-simulation.md)，包含代码提交与未覆盖项。
 
 ## 1. 现在可以运行什么
 
