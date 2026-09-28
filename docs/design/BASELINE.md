@@ -3,7 +3,7 @@
 - 文档编号：FB-BASELINE-001
 - 日期：2026-09-28
 - 性质：实现前设计基线，不是产品 v0.1 发布或功能冻结声明。
-- 当前实现：G1a/G1b 之上已落地 [G1c 持续宿主与安全配置](../development/G1_HOST_SECURITY.md)，包含合成持续调度、同用户执行锁、macOS 凭据入口及 SQLCipher 账本；原生适配器仍未实现。实现增量不等于完整 G1 Freeze，真实支持声明仍需独立验收回执。
+- 当前实现：G1a～G1c之上已加入[G1集成对账](../development/G1_INTEGRATION.md)与[G2a macOS只读探针](../development/G2_MACOS_PROBE.md)。探针只输出可读性摘要，完整消息适配/OCR/真实发送仍未实现；不宣称完整G1 Freeze或原生产品支持。
 - 关联：[文档导航](../README.md) · [适配矩阵](../adapters/CAPABILITY_MATRIX.md) · [验收清单](../acceptance/ACCEPTANCE_CHECKLIST.md) · [来源审计](../references/UPSTREAM_AUDIT.md)
 
 ## 1. 已确定的目标与约束

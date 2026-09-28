@@ -17,6 +17,10 @@ use tokio::{
     task::JoinSet,
 };
 
+#[cfg(test)]
+#[path = "scheduler_boundary_tests.rs"]
+mod boundary_tests;
+
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct HostSnapshot {
     pub paused: bool,
@@ -257,8 +261,39 @@ impl<C: MessageChannel> Host<C> {
         self.feedback_claim = None;
         Ok(())
     }
+    fn consume_input(&mut self, input: Input) {
+        let result = self.receive(input.observation, input.epoch);
+        if result.is_err() {
+            self.stats.rejected_inputs += 1;
+        }
+        let _ = input.ack.send(result);
+    }
+
+    /// Ingest a bounded prefix BEFORE considering a ready reply. A timer must not
+    /// overtake an observation already accepted by this host's input queue. Under
+    /// continued load skip dispatch, rather than draining forever and hiding stop.
+    fn drain_input_before_dispatch(&mut self) {
+        for _ in 0..64 {
+            if self.stop.is_cancelled() || !self.control.is_empty() {
+                break;
+            }
+            match self.input.try_recv() {
+                Ok(input) => self.consume_input(input),
+                Err(_) => break,
+            }
+        }
+    }
+
+    fn control_or_input_pending(&self) -> bool {
+        self.stop.is_cancelled() || !self.control.is_empty() || !self.input.is_empty()
+    }
+
     fn tick(&mut self) -> Result<()> {
+        if self.stop.is_cancelled() || !self.control.is_empty() {
+            return Ok(());
+        }
         self.owner.verify()?;
+        self.drain_input_before_dispatch();
         self.cancel_stale()?;
         // One independent feedback worker: even while paused, settle already authorized
         // requests with their captured provider. Shutdown cancels this worker too.
@@ -275,12 +310,15 @@ impl<C: MessageChannel> Host<C> {
             self.feedback
                 .spawn(async move { service.run_feedback(claim, token).await });
         }
-        if self.stats.paused {
+        if self.stats.paused || self.control_or_input_pending() {
             return Ok(());
         }
         let count = self.bindings.len();
         let mut dispatched = false;
         for offset in 0..count {
+            if self.control_or_input_pending() {
+                break;
+            }
             let index = (self.cursor + offset) % count;
             let key = self.bindings[index].key.clone();
             if !dispatched
@@ -367,9 +405,7 @@ impl<C: MessageChannel> Host<C> {
                     },
                     input=self.input.recv()=>{
                         let Some(input)=input else {break;};
-                        let result=self.receive(input.observation,input.epoch);
-                        if result.is_err(){ self.stats.rejected_inputs+=1; }
-                        let _=input.ack.send(result);
+                        self.consume_input(input);
                     },
                 }
             }

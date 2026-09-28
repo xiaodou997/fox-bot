@@ -2,7 +2,7 @@
 
 面向微信、QQ、飞书和 X 私信的跨平台消息自动化客户端。
 
-**当前状态：G1c 持续宿主、同用户设备执行锁、macOS 凭据入口与加密账本已实现，保留 G1a/G1b。** 可运行合成会话的持续 HTTP 收发、暂停恢复和故障测试；尚无真实聊天适配器、桌面界面、APK 或真实模型/聊天验收。下表中的原生能力仍是设计范围，不是完整 G1 Freeze。
+**当前状态：已新增 G1 集成检查入口和 G2a macOS 只读可读性探针，保留 G1a/G1b/G1c。** 探针限定微信/QQ，只输出权限、版本、节点和可读性摘要；完整消息适配器、OCR、真实发送、桌面界面和 APK 尚未实现。G1 剩余门禁已独立对账，不宣称完整 Freeze 或产品可用。
 
 ## 产品边界
 
@@ -51,6 +51,16 @@ python3 scripts/host_smoke.py
 ```
 
 宿主启动时暂停，经明确 resume 后处理已配置的新消息；HTTP 期间可暂停或停止，回执补偿不重复发送。此 smoke 仅使用合成内容与本机服务，不读现有凭据。macOS 钥匙串引用和 SQLCipher 加密账本的显式入口、权限/恢复边界见 [G1c 开发说明](docs/development/G1_HOST_SECURITY.md)。加密能力不意味着真实客户端或长期值守已验收。
+
+## 集成复核与 macOS 只读探针
+
+```bash
+python3 scripts/g1_integration_check.py --with-macos-probe
+python3 scripts/macos_probe.py --app qq
+python3 scripts/macos_probe.py --app wechat --allow-ax-read
+```
+
+第一条运行本地测试并构建探针，不读取真实聊天；后两条探测已运行应用，微信命令显式允许读取AX可读性但不输出正文。探针不截屏、不发消息、不改权限，也不自动启动客户端。参见 [G1集成对账](docs/development/G1_INTEGRATION.md)与[G2a探针说明](docs/development/G2_MACOS_PROBE.md)。
 
 ## 文档入口
 
