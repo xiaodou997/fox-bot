@@ -5,6 +5,8 @@
 - 关联：[设计基线](../design/BASELINE.md) · [验收清单](../acceptance/ACCEPTANCE_CHECKLIST.md) · [矩阵](../adapters/CAPABILITY_MATRIX.md)
 - 实际结果：[G1a 本地验收回执](../acceptance/receipts/2026-09-28-g1a-simulation.md)，包含代码提交与未覆盖项。
 
+> 本文记录 G1a 切片及其当时边界，不作为整个仓库的最新功能表。后续已增加 [G1b HTTP 回复与回执补偿](G1_HTTP_PROVIDER.md)；G1a 的既有回执和 48 项测试口径保持不变。
+
 ## 1. 现在可以运行什么
 
 仓库包含 Rust workspace：`foxbot-core` 是共享领域与持久化库，`foxbot-sim` 是离线合成消息 CLI。可执行“合成消息 → 固定回复服务 → 持久化发件箱 → 模拟写入/发送 → 效果核对”，并通过真实子进程退出测试恢复边界。

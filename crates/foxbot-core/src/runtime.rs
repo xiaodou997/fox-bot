@@ -10,7 +10,7 @@ use uuid::Uuid;
 /// One owner per canonical simulation state directory, for the entire runtime lifetime.
 /// This does not fence a second device or a different state directory.
 pub struct Runtime {
-    conn: Connection,
+    pub(crate) conn: Connection,
     _owner: File,
 }
 
@@ -77,7 +77,7 @@ impl Runtime {
         let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
         let application: i64 = conn.query_row("PRAGMA application_id", [], |r| r.get(0))?;
         if !((was_empty && version == 0 && application == 0)
-            || (version == 1 && application == 0x46425831))
+            || ((version == 1 || version == 2) && application == 0x46425831))
         {
             return Err(Error::Schema);
         }
@@ -86,6 +86,11 @@ impl Runtime {
         )?;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         tx.execute_batch(include_str!("schema.sql"))?;
+        // A lost HTTP ACK is replayed with the same immutable receipt id, never by resending chat.
+        tx.execute(
+            "UPDATE service_receipts SET status='PENDING' WHERE status='IN_FLIGHT'",
+            [],
+        )?;
         // Recovery only after acquiring the lifetime owner lock. Absence of a receipt
         // is NOT evidence that an external side effect did not happen.
         tx.execute("INSERT INTO transitions(action_id,state,reason)

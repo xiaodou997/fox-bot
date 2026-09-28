@@ -32,4 +32,16 @@ CREATE TABLE IF NOT EXISTS transitions (
 CREATE INDEX IF NOT EXISTS messages_queue ON messages(conversation, disposition, observed_ms);
 CREATE INDEX IF NOT EXISTS actions_pending ON outbox(conversation, state);
 PRAGMA application_id = 1178753073;
-PRAGMA user_version = 1;
+CREATE TABLE IF NOT EXISTS service_exchanges (
+    request_id TEXT PRIMARY KEY REFERENCES tasks(id), profile_tag TEXT NOT NULL,
+    conversation_ref TEXT NOT NULL, stateful INTEGER NOT NULL, wants_receipts INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS service_receipts (
+    id TEXT PRIMARY KEY, request_id TEXT NOT NULL REFERENCES service_exchanges(request_id),
+    revision INTEGER NOT NULL, payload TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status IN ('PENDING','IN_FLIGHT','ACKED','SUSPENDED')),
+    attempts INTEGER NOT NULL DEFAULT 0, next_ms INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(request_id, revision)
+);
+CREATE INDEX IF NOT EXISTS service_receipts_due ON service_receipts(status, next_ms);
+PRAGMA user_version = 2;

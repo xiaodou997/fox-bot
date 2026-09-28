@@ -1,0 +1,15 @@
+{
+  "protocol": "business_v1",
+  "endpoint": "http://127.0.0.1:8787/generate",
+  "model": null,
+  "context_mode": "service_managed",
+  "receipt_endpoint": "http://127.0.0.1:8787/feedback",
+  "idempotency_supported": true,
+  "staging_contract": true,
+  "allow_loopback_http": true,
+  "attempt_timeout_ms": 1000,
+  "total_timeout_ms": 3000,
+  "max_attempts": 2,
+  "max_response_bytes": 131072,
+  "max_in_flight": 2
+}

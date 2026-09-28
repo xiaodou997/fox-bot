@@ -4,10 +4,12 @@
 
 mod model;
 mod runtime;
+mod service;
 pub mod simulation;
 
 pub use model::*;
 pub use runtime::Runtime;
+pub use service::*;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

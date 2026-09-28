@@ -3,7 +3,7 @@
 - 文档编号：FB-BASELINE-001
 - 日期：2026-09-28
 - 性质：实现前设计基线，不是产品 v0.1 发布或功能冻结声明。
-- 当前实现：G1a 模拟核心与离线 CLI 已落地，见[开发说明](../development/G1_RUNTIME.md)；原生适配器仍未实现。所有能力必须经过矩阵与独立验收回执证明，G1a 不等于完整 G1 Freeze。
+- 当前实现：G1a 模拟核心与 G1b HTTP 回复/回执补偿已落地，见[G1a](../development/G1_RUNTIME.md)与[G1b](../development/G1_HTTP_PROVIDER.md)开发说明；原生适配器仍未实现。实现增量不等于完整 G1 Freeze，真实支持声明仍需独立验收回执。
 - 关联：[文档导航](../README.md) · [适配矩阵](../adapters/CAPABILITY_MATRIX.md) · [验收清单](../acceptance/ACCEPTANCE_CHECKLIST.md) · [来源审计](../references/UPSTREAM_AUDIT.md)
 
 ## 1. 已确定的目标与约束
