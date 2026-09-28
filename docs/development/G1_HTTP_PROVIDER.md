@@ -4,6 +4,7 @@
 - 范围：G1b 工程增量；不是完整 G1 Freeze，不是原生聊天适配验收。
 - 前置：[G1a 运行核心](G1_RUNTIME.md) · [设计基线](../design/BASELINE.md)
 - 验收定义：[验收清单](../acceptance/ACCEPTANCE_CHECKLIST.md)
+- 实际结果：[G1b 本地验收回执](../acceptance/receipts/2026-09-28-g1b-http.md)，被测源代码提交和未覆盖项独立记录。
 
 ## 1. 已实现的闭环
 
