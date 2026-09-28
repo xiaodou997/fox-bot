@@ -1,7 +1,11 @@
 mod support;
 use foxbot_core::*;
 use foxbot_http::*;
-use std::process::{Child, Command, Output, Stdio};
+use std::{
+    io::Read,
+    process::{Child, Command, Output, Stdio},
+    time::Duration,
+};
 use support::*;
 
 const BIN: &str = env!("CARGO_BIN_EXE_foxbot-http");
@@ -68,7 +72,12 @@ async fn killed_http_process_recovers_with_cancellation_receipt_and_no_chat_send
     let dir = private_dir();
     let config_path = dir.path().join("provider.json");
     let state = dir.path().join("state");
-    let config = server.config(Protocol::BusinessV1, ContextMode::ServiceManaged);
+    let mut config = server.config(Protocol::BusinessV1, ContextMode::ServiceManaged);
+    // This case tests process death AFTER request arrival, not HTTP timeout. Give
+    // process scheduling its own budget; do not let a 1s transport retry race the kill.
+    config.attempt_timeout_ms = 10_000;
+    config.total_timeout_ms = 10_000;
+    config.max_attempts = 1;
     std::fs::write(&config_path, serde_json::to_vec(&config).unwrap()).unwrap();
     let mut child = ChildGuard(
         Command::new(BIN)
@@ -78,11 +87,31 @@ async fn killed_http_process_recovers_with_cancellation_receipt_and_no_chat_send
             .arg("--allow-network")
             .env_remove("FOXBOT_HTTP_TOKEN")
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .stderr(Stdio::piped())
             .spawn()
             .unwrap(),
     );
-    server.wait_requests(1).await;
+    tokio::time::timeout(Duration::from_secs(15), async {
+        loop {
+            if !server.state.lock().unwrap().seen.is_empty() {
+                break;
+            }
+            if let Some(status) = child.0.try_wait().unwrap() {
+                let mut diagnostic = String::new();
+                child
+                    .0
+                    .stderr
+                    .take()
+                    .unwrap()
+                    .read_to_string(&mut diagnostic)
+                    .unwrap();
+                panic!("HTTP child exited before request arrival ({status}): {diagnostic}");
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("HTTP child startup did not reach the request-arrival checkpoint");
     child.0.kill().unwrap();
     child.0.wait().unwrap();
     let service = HttpReplyService::new(config, None).unwrap();
