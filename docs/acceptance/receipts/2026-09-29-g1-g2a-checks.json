@@ -1,0 +1,33 @@
+{
+  "schema_version": "foxbot.acceptance-summary.v1",
+  "receipt_id": "FB-G1-G2A-20260929",
+  "tested_commit": "1424ff17d7744c938bc0e256f30a2d26b205f1ce",
+  "local_report": "target/g1-integration/4f139a089d064e7ca169cfd131a1d1f9/report.json",
+  "source_before": "49e845f1100fc5428c65648fda1c378b9d117e0dcf2701d1e3c22960b4c72cda",
+  "source_after": "49e845f1100fc5428c65648fda1c378b9d117e0dcf2701d1e3c22960b4c72cda",
+  "source_unchanged": true,
+  "integration_passed": true,
+  "checks": [
+    {"step": "format", "exit_code": 0, "passed": true},
+    {"step": "clippy", "exit_code": 0, "passed": true},
+    {"step": "rust-tests", "exit_code": 0, "executed_tests": 106, "passed": true},
+    {"step": "cipher-disabled", "exit_code": 0, "executed_tests": 1, "passed": true},
+    {"step": "build-tools", "exit_code": 0, "passed": true},
+    {"step": "http-smoke", "exit_code": 0, "passed": true},
+    {"step": "host-smoke", "exit_code": 0, "passed": true},
+    {"step": "python-tests", "exit_code": 0, "executed_tests": 23, "passed": true},
+    {"step": "docs", "exit_code": 0, "passed": true},
+    {"step": "whitespace", "exit_code": 0, "passed": true},
+    {"step": "swift-tests", "exit_code": 0, "executed_tests": 20, "passed": true}
+  ],
+  "native_observations": [
+    {"app": "qq", "running_instances": 0, "status": "NOT_RUNNING", "account_identity": "UNVERIFIED", "conversation_identity": "UNVERIFIED"},
+    {"app": "wechat", "application_version": "4.1.13", "running_instances": 1, "status": "AX_SUMMARY", "visited_nodes": 5, "readable_static_text_nodes": 0, "message_candidates": 0, "editor_candidates": 0, "editor_state": "NOT_READ", "account_identity": "UNVERIFIED", "conversation_identity": "UNVERIFIED"}
+  ],
+  "native_chat_writes": 0,
+  "screenshots": 0,
+  "external_model_requests": 0,
+  "full_g1_freeze": false,
+  "native_adapter_accepted": false,
+  "long_run_acceptance": false
+}

@@ -3,6 +3,7 @@
 - 日期：2026-09-29
 - 范围：G1a/G1b/G1c 的本地集成检查、调度边界修正及 G2 只读准备；不是整产品发布或完整 G1 Freeze。
 - 关联：[基线](../design/BASELINE.md) · [总清单](../acceptance/ACCEPTANCE_CHECKLIST.md) · [只读探针](G2_MACOS_PROBE.md)
+- 实际结果：[G1集成与G2a验收回执](../acceptance/receipts/2026-09-29-g1-integration-g2a.md)，代码提交与文档回执分开记录。
 
 ## 1. 可重复执行的集成入口
 

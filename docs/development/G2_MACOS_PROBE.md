@@ -3,6 +3,7 @@
 - 日期：2026-09-29
 - 状态：独立探针已实现；完整消息适配器尚未实现。原生读取结果与构建测试见独立回执。
 - 关联：[集成对账](G1_INTEGRATION.md) · [能力矩阵](../adapters/CAPABILITY_MATRIX.md) · [验收清单](../acceptance/ACCEPTANCE_CHECKLIST.md)
+- 实际结果：[G1集成与G2a验收回执](../acceptance/receipts/2026-09-29-g1-integration-g2a.md)，真实应用只读观察与合成测试分别记录。
 
 ## 1. 本增量实际做什么
 
