@@ -1,5 +1,5 @@
-//! G1 simulation-only runtime. No native input, network or credential access.
-//! The SQLite ledger is NOT an encrypted production message store.
+//! G1 runtime: no native input, networking or credential lookup.
+//! Plaintext simulation and explicitly keyed encrypted ledgers have separate entry points.
 #![forbid(unsafe_code)]
 
 mod model;
@@ -19,6 +19,8 @@ pub enum Error {
     UnsafeState,
     #[error("unsupported database schema")]
     Schema,
+    #[error("encrypted ledger unavailable or could not be unlocked; no plaintext fallback")]
+    ProtectedStore,
     #[error("invalid input: {0}")]
     Invalid(&'static str),
     #[error("operation blocked: {0}")]

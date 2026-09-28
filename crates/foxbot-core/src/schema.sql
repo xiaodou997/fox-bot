@@ -44,4 +44,7 @@ CREATE TABLE IF NOT EXISTS service_receipts (
     UNIQUE(request_id, revision)
 );
 CREATE INDEX IF NOT EXISTS service_receipts_due ON service_receipts(status, next_ms);
-PRAGMA user_version = 2;
+CREATE TABLE IF NOT EXISTS host_control (
+    id INTEGER PRIMARY KEY CHECK(id=1), paused INTEGER NOT NULL CHECK(paused IN (0,1))
+);
+PRAGMA user_version = 3;

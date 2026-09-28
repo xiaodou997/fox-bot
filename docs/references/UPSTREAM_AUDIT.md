@@ -4,7 +4,7 @@
 - 核对日期：2026-09-28
 - 关联：[设计基线](../design/BASELINE.md) · [适配矩阵](../adapters/CAPABILITY_MATRIX.md)
 
-本文件记录设计参考来源，不是上游代码已迁入、依赖已安装或 FoxBot 已通过真机测试的声明。本次只编写原创文档；未复制实现、模型权重、图标或品牌资产。
+第 1–7 节记录 G0 设计阶段的固定参考来源和当时边界，不是参考聊天项目实现已迁入或 FoxBot 已通过真机聊天测试的声明。后续实际引入的基础库见第 8 节；不能将 G0 的“仅文档”状态当作当前仓库无代码。
 
 ## 1. 固定快照
 
@@ -91,3 +91,19 @@ review_and_validation_receipt:
 ## 7. 本轮未执行事项
 
 未构建三个参考项目，未安装客户端，未运行 OCR 基准，未打开真实聊天账号，未填入或发送任何消息。以上来源用于文档与设计，不构成软件功能回执。
+
+## 8. G1c 实际引入的基础依赖（2026-09-28）
+
+本节记录 G1c 的工程依赖，不改变前述三端参考仓库快照；没有复制其聊天适配代码。精确解析与 checksum 以 Cargo.lock 为准。
+
+| 组件 | 当前解析版本 | 用途与依据 |
+| --- | --- | --- |
+| rusqlite / libsqlite3-sys | 0.40.2 / 0.38.2 | [feature 文档](https://docs.rs/crate/rusqlite/0.40.2/features)；host 默认启用 bundled-sqlcipher-vendored-openssl，独立加密入口。 |
+| SQLCipher API | 随 libsqlite3-sys 的 bundled 源码构建 | [上游 API](https://www.zetetic.net/sqlcipher/sqlcipher-api/)；key 必须先于模式读取，读库确认密钥，不自动将明文库当密文处理。 |
+| openssl-src / openssl-sys | 300.6.1+3.6.3 / 0.9.117 | SQLCipher 构建依赖，版本来自锁文件；不是声明取得 FIPS 或商业认证。 |
+| security-framework | 3.7.0 | [macOS 密码 API](https://docs.rs/security-framework/3.7.0/security_framework/passwords/index.html)；固定命名空间的凭据获取/创建，不枚举既有凭据。 |
+| dirs | 6.0.0 | 同 OS 用户固定执行锁根目录，不依赖用户选择的账本目录。 |
+| zeroize | 1.9.0 | Secret 与原始数据库 key 临时缓冲区清理；不宣称所有依赖内部副本均被清零。 |
+| getrandom | 0.4.3（直接使用） | 操作系统随机源生成账本密钥和隔离探针名称；锁文件另有 0.2.17 的传递依赖。 |
+
+首次 SQLCipher 构建、加密读写和 macOS 随机凭据探针的实际结果记录于 G1c 回执；其他平台凭据、ACL、发布签名及完整许可证分发清单仍需发布前核对。安装了库或 API 可编译，不代表其所有平台能力已验收。FoxBot 自身 LICENSE 仍未选定，不因引用 MIT 上游或上述库自动取得统一许可证结论。

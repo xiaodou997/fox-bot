@@ -6,6 +6,8 @@
 - 验收定义：[验收清单](../acceptance/ACCEPTANCE_CHECKLIST.md)
 - 实际结果：[G1b 本地验收回执](../acceptance/receipts/2026-09-28-g1b-http.md)，被测源代码提交和未覆盖项独立记录。
 
+> 后续状态：本文描述 G1b 的阶段边界。持续调度、schema 3、macOS 凭据与独立加密入口已在 [G1c](G1_HOST_SECURITY.md) 实现；G1b 原有 CLI 仍是合成数据开发工具，旧明文账本不会自动转为加密。原有回执保持历史事实，不覆盖重写。
+
 ## 1. 已实现的闭环
 
 新增 `foxbot-http` crate 与同名命令行程序。网络请求由异步 reqwest/Tokio 执行，运行核心不绑定 HTTP；实际调用本机测试服务后，可以接受回复、准备模拟发件箱、模拟发送，并将效果回传给服务。这里的“真实 HTTP”指实际 TCP/HTTP 往返，不是已调用真实模型或真实聊天软件。

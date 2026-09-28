@@ -166,6 +166,14 @@ impl HttpReplyService {
         })
     }
 
+    /// Prevent an embedding host from pairing a configuration with a different client.
+    pub fn matches_configuration(&self, config: &HttpConfig) -> bool {
+        match (serde_json::to_vec(&self.config), serde_json::to_vec(config)) {
+            (Ok(a), Ok(b)) => a == b,
+            _ => false,
+        }
+    }
+
     pub fn profile_tag(&self) -> &str {
         &self.profile_tag
     }

@@ -96,7 +96,7 @@ impl Binding {
             max_auto_sends: 20,
         }
     }
-    pub(crate) fn validate(&self) -> Result<()> {
+    pub fn validate(&self) -> Result<()> {
         self.key.encoded()?;
         if self.identity_epoch == 0
             || self.identity_epoch > i64::MAX as u64

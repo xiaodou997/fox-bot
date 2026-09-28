@@ -1,0 +1,41 @@
+//! G1c: continuous host with bounded tasks, independent control, credentials and device ownership.
+//! Current executables use synthetic observations and senders only; not native chat support.
+#![forbid(unsafe_code)]
+pub mod config;
+pub mod credentials;
+pub mod ownership;
+pub mod scheduler;
+pub use config::*;
+pub use scheduler::*;
+#[cfg(test)]
+mod tests;
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum HostError {
+    #[error("invalid host configuration or command")]
+    Config,
+    #[error("local runtime operation failed")]
+    Storage,
+    #[error("device execution scope is busy")]
+    Busy,
+    #[error("device execution scope is no longer valid")]
+    Ownership,
+    #[error("required credential is missing")]
+    CredentialMissing,
+    #[error("system credential store is unavailable")]
+    CredentialUnavailable,
+    #[error("credential already exists; replacement requires an explicit rotation workflow")]
+    CredentialExists,
+    #[error("credential is invalid")]
+    CredentialInvalid,
+    #[error("host has stopped or its bounded input queue is full")]
+    Closed,
+    #[error("protected mode is not supported on this platform/build")]
+    Unsupported,
+}
+pub type Result<T> = std::result::Result<T, HostError>;
+impl From<foxbot_core::Error> for HostError {
+    fn from(_: foxbot_core::Error) -> Self {
+        Self::Storage
+    }
+}

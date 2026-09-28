@@ -1,0 +1,29 @@
+[package]
+name = "foxbot-host"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[features]
+default = ["encrypted-ledger"]
+encrypted-ledger = ["foxbot-core/encrypted-ledger"]
+
+[dependencies]
+foxbot-core.workspace = true
+foxbot-http = { path = "../foxbot-http" }
+tokio = { workspace = true, features = ["signal"] }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+sha2.workspace = true
+zeroize.workspace = true
+getrandom.workspace = true
+dirs = "6"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+security-framework = "3.7"
+
+[dev-dependencies]
+tempfile.workspace = true
+rusqlite.workspace = true

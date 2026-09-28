@@ -12,6 +12,7 @@ use uuid::Uuid;
 pub struct Runtime {
     pub(crate) conn: Connection,
     _owner: File,
+    encrypted: bool,
 }
 
 struct Session {
@@ -30,9 +31,21 @@ struct Task {
 }
 
 impl Runtime {
-    /// Explicit simulation boundary: synthetic data only; no production encryption yet.
+    /// Explicit plaintext fixture entry. Never used as a fallback for a protected store.
     pub fn open_simulation(directory: impl AsRef<Path>) -> Result<Self> {
-        let directory = directory.as_ref();
+        Self::open_inner(directory.as_ref(), None)
+    }
+
+    /// The caller obtains a random 32-byte key from its credential store. No implicit
+    /// key creation, rekeying, plaintext import or key-loss recovery happens here.
+    pub fn open_encrypted(directory: impl AsRef<Path>, key: &[u8; 32]) -> Result<Self> {
+        if !cfg!(feature = "encrypted-ledger") {
+            return Err(Error::ProtectedStore);
+        }
+        Self::open_inner(directory.as_ref(), Some(key))
+    }
+
+    fn open_inner(directory: &Path, key: Option<&[u8; 32]>) -> Result<Self> {
         let mut builder = fs::DirBuilder::new();
         builder.recursive(true);
         #[cfg(unix)]
@@ -73,11 +86,34 @@ impl Runtime {
             }
         }
         let mut conn = Connection::open(database)?;
+        if let Some(key) = key {
+            use std::fmt::Write;
+            let mut raw = zeroize::Zeroizing::new(String::from("x'"));
+            for byte in key {
+                write!(&mut *raw, "{byte:02x}").map_err(|_| Error::ProtectedStore)?;
+            }
+            raw.push('\'');
+            conn.pragma_update(None, "key", raw.as_str())
+                .map_err(|_| Error::ProtectedStore)?;
+            let cipher: String = conn
+                .query_row("PRAGMA cipher_version", [], |r| r.get(0))
+                .map_err(|_| Error::ProtectedStore)?;
+            if cipher.is_empty() {
+                return Err(Error::ProtectedStore);
+            }
+            // PRAGMA key alone does not test the key. Read before ANY schema mutation.
+            conn.query_row("SELECT count(*) FROM sqlite_master", [], |r| {
+                r.get::<_, i64>(0)
+            })
+            .map_err(|_| Error::ProtectedStore)?;
+            conn.execute_batch("PRAGMA cipher_memory_security=ON; PRAGMA temp_store=MEMORY;")
+                .map_err(|_| Error::ProtectedStore)?;
+        }
         conn.busy_timeout(Duration::from_secs(5))?;
         let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
         let application: i64 = conn.query_row("PRAGMA application_id", [], |r| r.get(0))?;
         if !((was_empty && version == 0 && application == 0)
-            || ((version == 1 || version == 2) && application == 0x46425831))
+            || ((1..=3).contains(&version) && application == 0x46425831))
         {
             return Err(Error::Schema);
         }
@@ -118,6 +154,7 @@ impl Runtime {
         Ok(Self {
             conn,
             _owner: owner,
+            encrypted: key.is_some(),
         })
     }
 
@@ -160,6 +197,80 @@ impl Runtime {
         Ok(())
     }
 
+    /// Host suspension is independent of each conversation's authorization/handoff state.
+    pub fn host_is_paused(&self) -> Result<bool> {
+        Ok(self
+            .conn
+            .query_row("SELECT paused FROM host_control WHERE id=1", [], |r| {
+                r.get(0)
+            })
+            .optional()?
+            .unwrap_or(false))
+    }
+
+    pub fn set_host_paused(&mut self, paused: bool) -> Result<()> {
+        let tx = self
+            .conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        tx.execute("INSERT INTO host_control(id,paused) VALUES(1,?1) ON CONFLICT(id) DO UPDATE SET paused=excluded.paused", [paused])?;
+        if paused {
+            let keys: Vec<String> = {
+                let mut stmt = tx.prepare("SELECT key FROM sessions")?;
+                stmt.query_map([], |r| r.get(0))?
+                    .collect::<std::result::Result<_, _>>()?
+            };
+            for key in keys {
+                invalidate(&tx, &key, false)?;
+            }
+            tx.execute("UPDATE sessions SET revision=revision+1", [])?;
+            tx.execute(
+                "UPDATE messages SET disposition='IGNORED' WHERE disposition='QUEUED'",
+                [],
+            )?;
+        }
+        tx.commit()?;
+        self.sync_service_receipts()
+    }
+
+    pub fn is_encrypted(&self) -> bool {
+        self.encrypted
+    }
+
+    /// Bounded counters for continuous status; does not enumerate historical actions.
+    pub fn host_counts(&self) -> Result<(u64, u64, u64, u64)> {
+        let count =
+            |sql: &str| -> Result<u64> { unsigned(self.conn.query_row(sql, [], |r| r.get(0))?) };
+        Ok((
+            count("SELECT COUNT(*) FROM messages")?,
+            count("SELECT COUNT(*) FROM tasks")?,
+            count("SELECT COUNT(*) FROM tasks WHERE state='READY'")?,
+            count(
+                "SELECT COUNT(*) FROM outbox WHERE state IN ('EXECUTING','SUBMITTED','UNKNOWN')",
+            )?,
+        ))
+    }
+
+    pub fn binding(&self, key: &ConversationKey) -> Result<Option<Binding>> {
+        let payload: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT binding FROM sessions WHERE key=?1",
+                [key.encoded()?],
+                |r| r.get(0),
+            )
+            .optional()?;
+        payload
+            .map(|v| serde_json::from_str(&v).map_err(Into::into))
+            .transpose()
+    }
+
+    pub fn ready_requests(&self, key: &ConversationKey) -> Result<Vec<String>> {
+        let mut stmt = self.conn.prepare("SELECT id FROM tasks WHERE conversation=?1 AND state='READY' ORDER BY created_ms,rowid LIMIT 16")?;
+        Ok(stmt
+            .query_map([key.encoded()?], |r| r.get(0))?
+            .collect::<std::result::Result<_, _>>()?)
+    }
+
     pub fn pause(&mut self, key: &ConversationKey) -> Result<()> {
         let mut binding = session(&self.conn, &key.encoded()?)?.binding;
         binding.enabled = false;
@@ -167,6 +278,7 @@ impl Runtime {
     }
 
     pub fn ingest(&mut self, observation: &Observation) -> Result<IngestOutcome> {
+        let host_paused = self.host_is_paused()?;
         let key = observation.key.encoded()?;
         crate::model::valid_id(&observation.source_event_id)?;
         let message = &observation.message;
@@ -241,6 +353,7 @@ impl Runtime {
             || message.direction == Direction::Unknown
             || (message.direction == Direction::Incoming && message.sender.is_none());
         let eligible = !ambiguous
+            && !host_paused
             && config.enabled
             && message.direction == Direction::Incoming
             && (config.kind == ConversationKind::Private
@@ -315,6 +428,9 @@ impl Runtime {
         user_request: Option<&str>,
     ) -> Result<Option<ReplyRequest>> {
         signed(now_ms)?;
+        if self.host_is_paused()? {
+            return Ok(None);
+        }
         if user_request.is_some_and(|v| v.len() > 16_384) {
             return Err(Error::Invalid("user request size"));
         }
@@ -511,6 +627,9 @@ impl Runtime {
         now_ms: u64,
         approved_by_user: bool,
     ) -> Result<String> {
+        if self.host_is_paused()? {
+            return Err(Error::Blocked("host paused"));
+        }
         let tx = self
             .conn
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -579,6 +698,9 @@ impl Runtime {
         channel: &mut C,
     ) -> Result<ActionState> {
         let (action, state) = self.action(action_id)?;
+        if self.host_is_paused()? {
+            return Err(Error::Blocked("host paused"));
+        }
         if state != ActionState::Prepared {
             return Err(Error::Stale);
         }

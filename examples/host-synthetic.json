@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "http": {
+    "protocol": "business_v1",
+    "endpoint": "http://127.0.0.1:8787/generate",
+    "model": null,
+    "context_mode": "service_managed",
+    "receipt_endpoint": "http://127.0.0.1:8787/feedback",
+    "idempotency_supported": true,
+    "staging_contract": true,
+    "allow_loopback_http": true,
+    "attempt_timeout_ms": 1500,
+    "total_timeout_ms": 4000,
+    "max_attempts": 1,
+    "max_response_bytes": 131072,
+    "max_in_flight": 2
+  },
+  "token": null,
+  "storage": {"kind": "synthetic_plaintext"},
+  "bindings": [
+    {
+      "key": {"device":"synthetic-device", "app_instance":"synthetic-app", "account_binding":"synthetic-account", "conversation":"synthetic-conversation"},
+      "title":"Synthetic fixture only",
+      "identity_epoch":1,
+      "profile_version":1,
+      "provider":{"kind":"custom"},
+      "mode":"auto_reply",
+      "kind":"private",
+      "group_all_messages":false,
+      "enabled":true,
+      "quiet_ms":50,
+      "max_wait_ms":200,
+      "reply_ttl_ms":30000,
+      "max_pending":64,
+      "max_batch":16,
+      "max_reply_chars":4096,
+      "max_auto_sends":20
+    }
+  ],
+  "tick_ms":25,
+  "max_jobs":2,
+  "shutdown_ms":1000
+}
