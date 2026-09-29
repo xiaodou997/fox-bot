@@ -2,6 +2,7 @@
 use foxbot_core::{simulation::*, *};
 use foxbot_host::{
     credentials::{CredentialRef, CredentialStore, NativeCredentials, Secret},
+    g2d_real,
     native_bridge::{
         GroundTruthAcceptance, NativeConversationBinding, NativeObservationBridge,
         PrivateBridgeMessage, PrivateDirection, PrivateMessageSnapshot,
@@ -95,6 +96,9 @@ async fn run() -> foxbot_host::Result<()> {
                   foxbot-host keychain-smoke --allow-keychain-test\n\
                   foxbot-host native-read-probe WORKER --allow-native-read\n\
                   foxbot-host bridge-sim-probe STATE --allow-plaintext-synthetic\n\
+                  foxbot-host g2d-private-capture WORKER SESSION CASE TAGS --allow-private-test-data\n\
+                  foxbot-host g2d-real-baseline WORKER SESSION ACCOUNT CONVERSATION KIND --allow-private-test-data\n\
+                  foxbot-host g2d-real-verify WORKER SESSION --allow-private-test-data\n\
                   Test only: foxbot-host lock-probe --hold"
         );
         return Ok(());
@@ -272,6 +276,95 @@ async fn run() -> foxbot_host::Result<()> {
             })
         );
         return Ok(());
+    }
+    if matches!(
+        args[0].as_str(),
+        "g2d-private-capture" | "g2d-real-baseline" | "g2d-real-verify"
+    ) {
+        #[cfg(not(target_os = "macos"))]
+        return Err(HostError::Unsupported);
+        #[cfg(target_os = "macos")]
+        {
+            let expected = match args[0].as_str() {
+                "g2d-private-capture" => 6,
+                "g2d-real-baseline" => 7,
+                "g2d-real-verify" => 4,
+                _ => unreachable!(),
+            };
+            if args.len() != expected
+                || args.last().map(String::as_str) != Some("--allow-private-test-data")
+            {
+                return Err(HostError::Config);
+            }
+            let baseline_acceptance = if args[0] == "g2d-real-baseline" {
+                Some(g2d_real::preflight_baseline(&args[2])?)
+            } else {
+                None
+            };
+            if args[0] == "g2d-real-verify" {
+                g2d_real::preflight_verify(&args[2])?;
+            }
+            let _owner = DeviceOwner::acquire()?;
+            let worker = NativeReadHost::start(NativeWorkerConfig {
+                binary: PathBuf::from(&args[1]),
+                warmup_timeout: Duration::from_secs(60),
+                request_timeout: Duration::from_secs(15),
+                queue_capacity: 2,
+            })?;
+            let handle = worker.handle();
+            handle.resume()?;
+            let first = handle.snapshot()?;
+            let snapshot = handle.snapshot()?;
+            handle.pause()?;
+            if first.application_session_fingerprint != snapshot.application_session_fingerprint
+                || first.conversation_fingerprint != snapshot.conversation_fingerprint
+            {
+                return Err(HostError::Untrusted);
+            }
+            match args[0].as_str() {
+                "g2d-private-capture" => {
+                    let tags = args[4]
+                        .split(',')
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty())
+                        .map(ToOwned::to_owned)
+                        .collect::<Vec<_>>();
+                    let report = g2d_real::capture_case(&args[2], &args[3], &tags, &snapshot)?;
+                    println!(
+                        "{}",
+                        serde_json::to_string(&report).map_err(|_| HostError::Config)?
+                    );
+                }
+                "g2d-real-baseline" => {
+                    let kind = match args[5].as_str() {
+                        "private" => ConversationKind::Private,
+                        "group" => ConversationKind::Group,
+                        _ => return Err(HostError::Config),
+                    };
+                    let report = g2d_real::prepare_baseline(
+                        &args[2],
+                        baseline_acceptance.ok_or(HostError::Config)?,
+                        &snapshot,
+                        &args[3],
+                        &args[4],
+                        kind,
+                    )?;
+                    println!(
+                        "{}",
+                        serde_json::to_string(&report).map_err(|_| HostError::Config)?
+                    );
+                }
+                "g2d-real-verify" => {
+                    let report = g2d_real::verify_current(&args[2], &snapshot)?;
+                    println!(
+                        "{}",
+                        serde_json::to_string(&report).map_err(|_| HostError::Config)?
+                    );
+                }
+                _ => unreachable!(),
+            }
+            return Ok(());
+        }
     }
     if matches!(args[0].as_str(), "init-key" | "set-token") {
         if args.len() != 3 || args[2] != "--confirm-keychain-write" {

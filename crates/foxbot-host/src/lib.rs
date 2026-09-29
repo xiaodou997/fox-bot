@@ -3,6 +3,7 @@
 #![forbid(unsafe_code)]
 pub mod config;
 pub mod credentials;
+pub mod g2d_real;
 pub mod native_bridge;
 pub mod native_read;
 pub mod ownership;
