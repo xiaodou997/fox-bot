@@ -2,7 +2,7 @@
 
 当前文档基线：**v0.1 / 2026-09-28**。这是设计阶段的版本，不是应用发布版本。
 
-当前新增 G2b-3 持久 Vision OCR worker 和只读 MessageSnapshot，保留 G1 集成、G2a、G2b-1/2。微信 4.1.13 已在同一预热 worker 内连续完成真实单窗口 OCR；输出只含脱敏统计，解析仍为启发式、会话身份 UNVERIFIED。QQ 未运行，没有真实模型联调、真实发送、安装包或长稳结论。
+当前推进到 G2c：Rust host 已接管 macOS OCR worker 生命周期并接收私有 MessageSnapshot，会话身份和 ground-truth 门禁已经编码；真实微信只读链路已通过，但真实 ground-truth 与显式 Binding 尚未建立，所以 Observation 桥接保持 PROVISIONAL。QQ 未运行，没有真实模型联调、真实发送、安装包或长稳结论。
 
 ## 1. 三份主文档
 
@@ -34,6 +34,7 @@
 | [G2b-2 验收回执](acceptance/receipts/2026-09-29-g2b2-window-binding.md) | 固定代码提交、真实微信窗口捕获、同框消歧与真实 OCR 超时边界 |
 | [G2b-3 OCR Worker / MessageSnapshot](development/G2_OCR_WORKER_MESSAGE_SNAPSHOT.md) | 持久预热、请求级超时、Vision ROI、气泡方向/发言人启发式和真实 OCR 边界 |
 | [G2b-3 验收回执](acceptance/receipts/2026-09-29-g2b3-ocr-worker.md) | 固定代码提交、真实微信持久 worker OCR、脱敏 MessageSnapshot 与未覆盖边界 |
+| [G2c 会话身份与 Rust Host](development/G2C_IDENTITY_HOST.md) | 应用会话/会话指纹、显式绑定、跨帧连续性、ground-truth 门禁和 worker 生命周期 |
 
 已执行的检查或测试回执保存到 `docs/acceptance/receipts/`，清单本身不作为累计通过报告。新增回执时使用稳定文件名，标记实际被检提交；文档回执的提交与被测程序提交可以不同，不能混写。
 
@@ -64,6 +65,6 @@
 
 ## 6. 当前阶段和下一项
 
-G2b-3 已跑通真实微信的持久 worker OCR，并形成只读 MessageSnapshot；下一项应补稳定会话身份、真实消息人工标注对照和运行中 QQ 样本，再决定如何桥接到核心 Observation。真实发送继续保持关闭。
+G2c 的身份模型、标注框架和 Observation 桥接实现已具备，但真实微信 ground-truth 尚未接受，所以真实链路仍只读且 PROVISIONAL。下一项先建立专用测试会话的人工标注与显式绑定，再验证真实 MessageSnapshot → Observation；QQ 运行中样本继续待补。真实发送保持关闭。
 
 目标应用版本与定制服务脱敏样例可在联调时补充，不阻塞模拟开发；未取得对应证据之前，不承诺真实客户端兼容性。根目录 scripts/check_docs.py 可直接检查本地 Markdown 文件目标、JSON 示例和案例引用，不联网检查外部链接。

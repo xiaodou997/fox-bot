@@ -1,7 +1,8 @@
 import CoreGraphics
+import CryptoKit
 import Foundation
 
-public enum MessageDirection: String {
+public enum MessageDirection: String, Codable {
     case me = "ME"
     case them = "THEM"
     case unknown = "UNKNOWN"
@@ -55,6 +56,7 @@ public enum WeChatMessageParser {
     // Reference project used x>=0.32 and bottom-origin body 0.24...0.90 on WeChat 4.x.
     // FoxBot stores Vision boxes in top-origin coordinates, yielding y 0.10...0.76.
     public static let strategy = "WECHAT_HEURISTIC_V0"
+    public static let readRegion = CGRect(x: 0.32, y: 0.02, width: 0.68, height: 0.74)
     public static let chatRegion = CGRect(x: 0.32, y: 0.10, width: 0.68, height: 0.66)
     private static let minimumConfidence: Float = 0.30
 
@@ -77,6 +79,65 @@ public enum WeChatMessageParser {
 
     private static func union(_ first: CGRect, _ second: CGRect) -> CGRect {
         first.union(second)
+    }
+
+    private static func digest(_ value: String, domain: String) -> String {
+        let data = Data((domain + "\0" + value).utf8)
+        return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func normalizedTitle(_ snapshot: OCRSnapshot) -> String? {
+        let candidates = snapshot.lines.filter {
+            $0.confidence >= minimumConfidence
+                && $0.bounds.midY >= 0.015 && $0.bounds.midY < 0.10
+                && $0.bounds.minX >= 0.32 && $0.bounds.minX < 0.66
+                && !isNoise($0.text)
+        }.sorted {
+            if abs($0.bounds.minY - $1.bounds.minY) < 0.005 { return $0.bounds.minX < $1.bounds.minX }
+            return $0.bounds.minY < $1.bounds.minY
+        }
+        guard let first = candidates.first else { return nil }
+        let row = candidates.filter { abs($0.bounds.minY - first.bounds.minY) < 0.03 }
+            .sorted { $0.bounds.minX < $1.bounds.minX }
+        var kept: [OCRLine] = []
+        for line in row {
+            if let last = kept.last,
+               line.bounds.minX - last.bounds.maxX > 1.5 * max(line.bounds.height, last.bounds.height) {
+                break
+            }
+            kept.append(line)
+        }
+        var title = kept.map(\.text).joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        title = title.replacingOccurrences(of: #"\s*[（(]\s*\d+\s*[）)]\s*$"#,
+                                           with: "", options: .regularExpression)
+        title = title.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty, title.utf8.count <= 512 else { return nil }
+        return title
+    }
+
+    public static func conversationFingerprint(_ snapshot: OCRSnapshot) -> String? {
+        normalizedTitle(snapshot).map { digest($0, domain: "foxbot.wechat.conversation.v1") }
+    }
+
+    public static func applicationSessionFingerprint(
+        bundleID: String,
+        launchTime: TimeInterval
+    ) -> String? {
+        guard !bundleID.isEmpty, bundleID.utf8.count <= 256,
+              launchTime.isFinite, launchTime > 0 else { return nil }
+        return digest(
+            bundleID + "\0" + String(format: "%.6f", launchTime),
+            domain: "foxbot.application-session.v1"
+        )
+    }
+
+    private static func senderFingerprint(_ sender: String?) -> String? {
+        guard let sender else { return nil }
+        let normalized = sender.replacingOccurrences(of: #"\s+"#, with: " ",
+            options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
+        return normalized.isEmpty ? nil : digest(normalized, domain: "foxbot.wechat.sender.v1")
     }
 
     private static func mergeFragments(_ lines: [OCRLine]) -> [OCRLine] {
@@ -171,4 +232,48 @@ public enum WeChatMessageParser {
         return MessageSnapshot(messages: messages, region: chatRegion,
                                partialReasons: reasons, strategy: strategy)
     }
+
+    public static func privateSnapshot(
+        _ snapshot: OCRSnapshot,
+        applicationSessionFingerprint: String
+    ) -> PrivateMessageSnapshot? {
+        guard let conversationFingerprint = conversationFingerprint(snapshot),
+              applicationSessionFingerprint.count == 64,
+              applicationSessionFingerprint.allSatisfy({ $0.isHexDigit && !$0.isUppercase })
+        else { return nil }
+        let parsed = parse(snapshot)
+        return PrivateMessageSnapshot(
+            schemaVersion: "foxbot.private-message-snapshot.v1",
+            strategy: strategy,
+            applicationSessionFingerprint: applicationSessionFingerprint,
+            conversationFingerprint: conversationFingerprint,
+            partialReasons: parsed.partialReasons,
+            messages: parsed.messages.map {
+                PrivateBridgeMessage(
+                    text: $0.text,
+                    direction: $0.direction,
+                    senderFingerprint: senderFingerprint($0.sender),
+                    complete: snapshot.statistics.completeRecognition && $0.direction != .unknown
+                )
+            }
+        )
+    }
+}
+
+/// Private local IPC only. Unlike diagnostic summaries this intentionally carries message text.
+/// It must never be printed by public probe wrappers or persisted in receipts.
+public struct PrivateBridgeMessage: Codable {
+    public let text: String
+    public let direction: MessageDirection
+    public let senderFingerprint: String?
+    public let complete: Bool
+}
+
+public struct PrivateMessageSnapshot: Codable {
+    public let schemaVersion: String
+    public let strategy: String
+    public let applicationSessionFingerprint: String
+    public let conversationFingerprint: String
+    public let partialReasons: [String]
+    public let messages: [PrivateBridgeMessage]
 }

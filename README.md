@@ -2,7 +2,7 @@
 
 面向微信、QQ、飞书和 X 私信的跨平台消息自动化客户端。
 
-**当前状态：G2b-3 持久 Vision OCR worker 与只读 MessageSnapshot 已落地，保留 G1 集成、G2a、G2b-1/2。** 微信 4.1.13 已在同一预热 worker 中连续完成真实单窗口 OCR；脱敏统计稳定得到 10 条候选消息（3 我方 / 7 对方 / 0 未知方向），正文、发言人姓名和截图均未输出或保存。当前解析仍标记为 HEURISTIC_REGION，会话身份未验证；QQ 当前未运行。真实发送、桌面界面和 APK 尚未实现。
+**当前状态：G2c 会话身份、ground-truth 门禁和 Rust 原生读取宿主已进入实现阶段。** 微信 4.1.13 的 Rust host → 持久 OCR worker → 私有 MessageSnapshot 已真实跑通；公开探针连续两读确认应用运行会话和会话视觉指纹稳定，但没有真实 ground-truth 接受记录与显式会话绑定，因此 Observation 桥接仍保持 PROVISIONAL。QQ 当前未运行。真实发送、桌面界面和 APK 尚未实现。
 
 ## 产品边界
 
@@ -89,6 +89,13 @@ python3 scripts/macos_ocr_worker.py \
 ~~~
 
 worker 在独立进程内先用 64×64 空白图预热 Apple Vision，再复用同一进程处理真实窗口。微信 OCR 只请求启发式聊天 ROI，不再识别整个侧栏与输入区；真实测试从约 85 行整窗 OCR 降到 19 行区域 OCR，两次请求约 1.06s / 0.83s。原始 OCR 文字和 sender 仅存在进程内存，命令行只输出 MessageSnapshot 计数与不确定性。详情见 [G2b-3说明](docs/development/G2_OCR_WORKER_MESSAGE_SNAPSHOT.md)。
+
+## G2c 会话身份与 Rust Host
+
+    target/debug/foxbot-host native-read-probe target/macos-probe/debug/foxbot-macos-ocr --allow-native-read
+    python3 scripts/g2c_ground_truth.py target/g2c-groundtruth/<private-fixture>.json
+
+G2c 将应用运行会话指纹、会话标题指纹、用户显式 Binding、identity_epoch 和跨帧消息连续性组合使用；标题哈希或窗口几何都不能单独成为稳定会话身份。ground-truth 原始标注只能放在 Git 忽略的 target/g2c-groundtruth/，输出只含误差计数。真实标注尚未执行，因此当前真实微信只读探针仍不会生成可进入自动回复链的 Observation。详见 [G2c说明](docs/development/G2C_IDENTITY_HOST.md)。
 
 ## 文档入口
 

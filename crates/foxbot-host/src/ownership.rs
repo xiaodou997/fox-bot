@@ -10,6 +10,13 @@ pub struct DeviceOwner {
     file: File,
     path: PathBuf,
 }
+impl Drop for DeviceOwner {
+    fn drop(&mut self) {
+        // Release the advisory lock explicitly before the descriptor is dropped.
+        // The lock file inode itself remains durable; later processes must reuse it.
+        let _ = self.file.unlock();
+    }
+}
 impl DeviceOwner {
     pub fn acquire() -> Result<Self> {
         let base = dirs::data_local_dir().ok_or(HostError::Ownership)?;

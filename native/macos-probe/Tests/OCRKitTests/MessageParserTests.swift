@@ -86,4 +86,55 @@ final class MessageParserTests: XCTestCase {
         XCTAssertEqual(result.messages.first?.text, "原始识别")
         XCTAssertTrue(result.partialReasons.contains("OCR_PARTIAL"))
     }
+
+    func testConversationFingerprintNormalizesMemberCountAndDoesNotExposeTitle() {
+        let first = parserSnapshot([
+            parserLine("测试群（12）", 0.40, 0.04, 0.15, 0.03),
+            parserLine("消息", 0.40, 0.30)
+        ])
+        let second = parserSnapshot([
+            parserLine("测试群 (99)", 0.40, 0.04, 0.15, 0.03),
+            parserLine("消息", 0.40, 0.30)
+        ])
+        let a = WeChatMessageParser.conversationFingerprint(first)
+        let b = WeChatMessageParser.conversationFingerprint(second)
+        XCTAssertEqual(a, b)
+        XCTAssertEqual(a?.count, 64)
+        XCTAssertFalse(a?.contains("测试群") ?? true)
+    }
+
+    func testPrivateSnapshotRequiresHeaderIdentityAndHashesSender() throws {
+        let snapshot = parserSnapshot([
+            parserLine("会话名", 0.40, 0.04, 0.12, 0.03),
+            parserLine("群成员", 0.40, 0.28, 0.08, 0.018),
+            parserLine("正文", 0.405, 0.325, 0.18, 0.032)
+        ])
+        let result = try XCTUnwrap(WeChatMessageParser.privateSnapshot(
+            snapshot, applicationSessionFingerprint: String(repeating: "c", count: 64)))
+        XCTAssertEqual(result.messages.count, 1)
+        XCTAssertEqual(result.messages[0].direction, .them)
+        XCTAssertEqual(result.messages[0].senderFingerprint?.count, 64)
+        let data = String(decoding: try JSONEncoder().encode(result), as: UTF8.self)
+        XCTAssertTrue(data.contains("正文"))
+        XCTAssertFalse(data.contains("群成员"))
+        XCTAssertFalse(data.contains("会话名"))
+
+        let noHeader = parserSnapshot([parserLine("正文", 0.40, 0.30)])
+        XCTAssertNil(WeChatMessageParser.privateSnapshot(
+            noHeader, applicationSessionFingerprint: String(repeating: "c", count: 64)))
+    }
+
+    func testApplicationSessionFingerprintIsStableWithinLaunchAndChangesAcrossLaunch() {
+        let a = WeChatMessageParser.applicationSessionFingerprint(
+            bundleID: "com.tencent.xinWeChat", launchTime: 123.456)
+        let b = WeChatMessageParser.applicationSessionFingerprint(
+            bundleID: "com.tencent.xinWeChat", launchTime: 123.456)
+        let c = WeChatMessageParser.applicationSessionFingerprint(
+            bundleID: "com.tencent.xinWeChat", launchTime: 124.456)
+        XCTAssertEqual(a, b)
+        XCTAssertNotEqual(a, c)
+        XCTAssertEqual(a?.count, 64)
+        XCTAssertNil(WeChatMessageParser.applicationSessionFingerprint(
+            bundleID: "com.tencent.xinWeChat", launchTime: .nan))
+    }
 }

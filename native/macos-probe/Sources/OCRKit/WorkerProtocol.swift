@@ -5,6 +5,7 @@ public enum OCRWorkerAction: String, Codable {
     case warmup
     case captureOCR = "capture_ocr"
     case captureOnly = "capture_only"
+    case captureSnapshot = "capture_snapshot"
     case shutdown
 }
 
@@ -32,9 +33,12 @@ public struct OCRWorkerReply: Encodable {
     public let status: String
     public let warmup: OCRWarmupSummary?
     public let report: WindowOCRReport?
+    public let privateSnapshot: PrivateMessageSnapshot?
 
     public init(id: String, status: String,
-                warmup: OCRWarmupSummary? = nil, report: WindowOCRReport? = nil) {
+                warmup: OCRWarmupSummary? = nil, report: WindowOCRReport? = nil,
+                privateSnapshot: PrivateMessageSnapshot? = nil) {
         self.id = id; self.status = status; self.warmup = warmup; self.report = report
+        self.privateSnapshot = privateSnapshot
     }
 }

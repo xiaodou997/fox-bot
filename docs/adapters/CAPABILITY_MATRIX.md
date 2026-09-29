@@ -177,3 +177,16 @@ known_gaps:
 | MC-QQ | NOT RUN | QQ仍未运行 | 运行中AX、OCR或专属 MessageSnapshot 未验收 |
 
 [G2b-3说明](../development/G2_OCR_WORKER_MESSAGE_SNAPSHOT.md)记录协议、ROI 和真实性能证据。HEURISTIC_REGION 会强制 summary.complete=false，因此这些结果不能直接成为自动发送授权。
+
+### G2c 身份 / Ground Truth / Host 桥接（真实发送仍关闭）
+
+| 对象 | 实现 | 本轮状态 | 未覆盖 |
+| --- | --- | --- | --- |
+| 应用运行会话 | IMPLEMENTED | bundle + launch time 本地 SHA-256；进程重启后旧 binding 变 PROVISIONAL | 同进程内登出/换号尚无自动系统信号，需显式 invalidate/rebind |
+| 会话身份 | IMPLEMENTED | 标题仅作 SHA-256 视觉指纹；必须用户显式映射到稳定 account/conversation Binding；同指纹重复配置拒绝 | 同名会话仍依赖至少两条消息连续性和显式绑定，不能把标题当原生 ID |
+| 跨帧消息跟踪 | IMPLEMENTED | 首帧 historical baseline；≥2 条 suffix/prefix 连续后只生成新增 Observation；重复“好的”可作为独立消息 | 滚动跨度过大/无重叠返回 AMBIGUOUS，不猜测 |
+| Ground truth | FRAMEWORK PASS / REAL NOT RUN | 私有标注文件仅允许在 target/g2c-groundtruth；6场景≥24条，覆盖 private/group/duplicate/numeric/multiline/reference | 真实微信专用测试会话尚未人工标注，因此没有 accepted 记录 |
+| Rust worker host | IMPLEMENTED / LOCAL PASS | starts paused；resume warmup；pause 结束 worker；崩溃后下一读重启预热；有界队列返回 backpressure；reader 线程受管 | 尚未并入长期生产调度 tick |
+| MC-WX Rust 只读探针 | LOCAL PASS | 连续两读应用会话与会话指纹稳定，私有快照已收到；公开输出无正文/哈希值 | Observation 固定 PROVISIONAL，直到真实 GT + 显式 Binding |
+
+[G2c说明](../development/G2C_IDENTITY_HOST.md)记录门禁细节。G2c 没有新增任何原生写入/点击/发送能力。

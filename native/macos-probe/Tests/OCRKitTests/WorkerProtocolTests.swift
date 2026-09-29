@@ -11,6 +11,7 @@ final class WorkerProtocolTests: XCTestCase {
         XCTAssertEqual(decoded.command, .captureOCR)
         XCTAssertEqual(decoded.app, .wechat)
         XCTAssertEqual(decoded.focusedWindow, true)
+        XCTAssertEqual(OCRWorkerAction.captureSnapshot.rawValue, "capture_snapshot")
     }
 
     func testSnakeCaseWorkerWireFormatDecodesFocusedWindow() throws {
@@ -37,5 +38,22 @@ final class WorkerProtocolTests: XCTestCase {
         XCTAssertFalse(json.contains("text"))
         XCTAssertFalse(json.contains("image"))
         XCTAssertFalse(json.contains("bounds"))
+    }
+
+    func testPrivateSnapshotWireCarriesOnlyHashedIdentityAndMessages() throws {
+        let snapshot = PrivateMessageSnapshot(
+            schemaVersion: "foxbot.private-message-snapshot.v1",
+            strategy: WeChatMessageParser.strategy,
+            applicationSessionFingerprint: String(repeating: "c", count: 64),
+            conversationFingerprint: String(repeating: "a", count: 64),
+            partialReasons: ["HEURISTIC_REGION"],
+            messages: [PrivateBridgeMessage(text: "synthetic", direction: .them,
+                                            senderFingerprint: String(repeating: "b", count: 64),
+                                            complete: true)])
+        let reply = OCRWorkerReply(id: "private", status: "SNAPSHOT", privateSnapshot: snapshot)
+        let json = String(decoding: try JSONEncoder().encode(reply), as: UTF8.self)
+        XCTAssertTrue(json.contains("synthetic"))
+        XCTAssertFalse(json.contains("sender_name"))
+        XCTAssertFalse(json.contains("window_id"))
     }
 }

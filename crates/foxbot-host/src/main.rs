@@ -2,6 +2,7 @@
 use foxbot_core::{simulation::*, *};
 use foxbot_host::{
     credentials::{CredentialRef, CredentialStore, NativeCredentials, Secret},
+    native_read::{NativeReadHost, NativeWorkerConfig},
     ownership::DeviceOwner,
     *,
 };
@@ -10,6 +11,7 @@ use std::{
     collections::HashMap,
     io::{BufRead, Read, Write},
     path::PathBuf,
+    time::Duration,
 };
 use tokio::sync::mpsc;
 
@@ -87,6 +89,7 @@ async fn run() -> foxbot_host::Result<()> {
                   foxbot-host init-key NAME --confirm-keychain-write\n\
                   foxbot-host set-token NAME --confirm-keychain-write  (secret on stdin, never argv)\n\
                   foxbot-host keychain-smoke --allow-keychain-test\n\
+                  foxbot-host native-read-probe WORKER --allow-native-read\n\
                   Test only: foxbot-host lock-probe --hold"
         );
         return Ok(());
@@ -103,6 +106,59 @@ async fn run() -> foxbot_host::Result<()> {
         credentials::native_smoke()?;
         println!("{{\"keychain_roundtrip\":true,\"ephemeral_item_deleted\":true}}");
         return Ok(());
+    }
+    if args[0] == "native-read-probe" {
+        if args.len() != 3 || args[2] != "--allow-native-read" {
+            return Err(HostError::Config);
+        }
+        #[cfg(not(target_os = "macos"))]
+        return Err(HostError::Unsupported);
+        #[cfg(target_os = "macos")]
+        {
+            let _owner = DeviceOwner::acquire()?;
+            let worker = NativeReadHost::start(NativeWorkerConfig {
+                binary: PathBuf::from(&args[1]),
+                warmup_timeout: Duration::from_secs(60),
+                request_timeout: Duration::from_secs(15),
+                queue_capacity: 2,
+            })?;
+            let handle = worker.handle();
+            let warmed = handle.resume()?;
+            let first = handle.snapshot()?;
+            let snapshot = handle.snapshot()?;
+            if first.conversation_fingerprint != snapshot.conversation_fingerprint
+                || first.application_session_fingerprint != snapshot.application_session_fingerprint
+            {
+                handle.pause()?;
+                return Err(HostError::Untrusted);
+            }
+            let status = handle.status()?;
+            handle.pause()?;
+            println!(
+                "{}",
+                serde_json::json!({
+                    "schema_version":"foxbot.native-read-probe.v1",
+                    "status":"SNAPSHOT_RECEIVED",
+                    "read_only":true,
+                    "raw_text_included":false,
+                    "image_saved":false,
+                    "write_or_send_operations":0,
+                    "application_session_state":"STABLE_TWO_READS",
+                    "conversation_fingerprint_state":"STABLE_TWO_READS",
+                    "strategy":snapshot.strategy,
+                    "message_count":snapshot.messages.len(),
+                    "partial_reasons":snapshot.partial_reasons,
+                    "worker":{
+                        "warmed":warmed.warmed,
+                        "starts":status.starts,
+                        "successful_snapshots":status.successful_snapshots,
+                        "failures":status.failures
+                    },
+                    "observation_bridge":"PROVISIONAL_REQUIRES_CONFIGURED_IDENTITY_AND_ACCEPTED_GROUND_TRUTH"
+                })
+            );
+            return Ok(());
+        }
     }
     if matches!(args[0].as_str(), "init-key" | "set-token") {
         if args.len() != 3 || args[2] != "--confirm-keychain-write" {

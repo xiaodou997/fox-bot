@@ -3,6 +3,8 @@
 #![forbid(unsafe_code)]
 pub mod config;
 pub mod credentials;
+pub mod native_bridge;
+pub mod native_read;
 pub mod ownership;
 pub mod scheduler;
 pub use config::*;
@@ -30,6 +32,14 @@ pub enum HostError {
     CredentialInvalid,
     #[error("host has stopped or its bounded input queue is full")]
     Closed,
+    #[error("native read worker queue is full")]
+    Backpressure,
+    #[error("native read worker is paused")]
+    Paused,
+    #[error("native read worker failed or returned an invalid result")]
+    NativeWorker,
+    #[error("native snapshot identity or trust is insufficient")]
+    Untrusted,
     #[error("protected mode is not supported on this platform/build")]
     Unsupported,
 }

@@ -1,9 +1,11 @@
 import AppKit
 import Foundation
 import OCRKit
+import ProbeKit
 
 enum WorkerMode {
     private static let maxInputBytes = 4096
+    private static let maxOutputBytes = 65_536
     private static let maxCommands = 4096
 
     @MainActor
@@ -54,6 +56,44 @@ enum WorkerMode {
                         source: NativeWindowSource(),
                         selection: command.focusedWindow == true ? .focused : .unique)
                     reply = OCRWorkerReply(id: command.id, status: "REPORT", report: report)
+                case .captureSnapshot:
+                    guard warmed else {
+                        reply = OCRWorkerReply(id: command.id, status: "NOT_WARMED")
+                        break
+                    }
+                    guard command.app == .wechat else {
+                        reply = OCRWorkerReply(id: command.id, status: "UNSUPPORTED_APP")
+                        break
+                    }
+                    let source = NativeWindowSource()
+                    let metadata = source.metadata(.wechat)
+                    guard let launchTime = metadata.launchTime,
+                          let applicationSessionFingerprint =
+                            WeChatMessageParser.applicationSessionFingerprint(
+                                bundleID: TargetApp.wechat.bundleID,
+                                launchTime: launchTime) else {
+                        reply = OCRWorkerReply(id: command.id, status: "IDENTITY_UNAVAILABLE")
+                        break
+                    }
+                    var raw: OCRSnapshot?
+                    let report = await WindowOCRProbe.run(app: .wechat, requested: true, ocrRequested: true,
+                        source: source,
+                        selection: command.focusedWindow == true ? .focused : .unique,
+                        recognize: { image in
+                            let snapshot = try VisionOCR.recognize(
+                                image, topLeftRegion: WeChatMessageParser.readRegion)
+                            raw = snapshot
+                            return snapshot
+                        })
+                    guard ["OCR_SUMMARY", "OCR_PARTIAL_SUMMARY", "OCR_EMPTY"].contains(report.status),
+                          report.windowStable == true, let raw,
+                          let snapshot = WeChatMessageParser.privateSnapshot(
+                            raw, applicationSessionFingerprint: applicationSessionFingerprint) else {
+                        reply = OCRWorkerReply(id: command.id, status: "IDENTITY_UNAVAILABLE", report: report)
+                        break
+                    }
+                    reply = OCRWorkerReply(id: command.id, status: "SNAPSHOT",
+                                           report: report, privateSnapshot: snapshot)
                 case .shutdown:
                     reply = OCRWorkerReply(id: command.id, status: "SHUTDOWN")
                     write(reply, encoder)
@@ -67,7 +107,7 @@ enum WorkerMode {
     }
 
     private static func write(_ reply: OCRWorkerReply, _ encoder: JSONEncoder) {
-        guard let data = try? encoder.encode(reply), data.count <= 16_384 else { return }
+        guard let data = try? encoder.encode(reply), data.count <= maxOutputBytes else { return }
         FileHandle.standardOutput.write(data)
         FileHandle.standardOutput.write(Data([10]))
     }
