@@ -1,9 +1,9 @@
 # G2c：会话身份、Ground Truth 与 Rust 原生读取宿主
 
 - 日期：2026-09-29
-- 状态：实现已具备；真实微信 worker 私有快照可由 Rust host 获取，但真实 ground-truth 与显式会话 Binding 尚未建立，因此真实 Observation 桥接保持 PROVISIONAL。
+- 状态：G2c 实现与真实只读宿主链路已收口；真实 ground-truth 与显式会话 Binding 留给 G2d，因此真实 Observation 桥接继续保持 PROVISIONAL。
 - 前置：[G2b-3 OCR Worker / MessageSnapshot](G2_OCR_WORKER_MESSAGE_SNAPSHOT.md)
-- 关联：[设计基线](../design/BASELINE.md) · [能力矩阵](../adapters/CAPABILITY_MATRIX.md) · [验收清单](../acceptance/ACCEPTANCE_CHECKLIST.md)
+- 关联：[设计基线](../design/BASELINE.md) · [能力矩阵](../adapters/CAPABILITY_MATRIX.md) · [验收清单](../acceptance/ACCEPTANCE_CHECKLIST.md) · [G2c 验收回执](../acceptance/receipts/2026-09-29-g2c-identity-host.md)
 
 ## 1. 身份不是一个标题哈希
 
@@ -105,7 +105,7 @@ PROVISIONAL_REQUIRES_CONFIGURED_IDENTITY_AND_ACCEPTED_GROUND_TRUTH
 
 ## 6. 下一步与仍未关闭项
 
-G2c 后续真实验收需要测试人员使用专用聊天账号/会话建立私有 ground-truth，并显式绑定对应稳定 ConversationKey。完成后才可验证真实新增消息是否生成正确 Observation。
+G2c 到此收口。G2d 需要测试人员使用专用聊天账号/会话建立私有 ground-truth，并显式绑定对应稳定 ConversationKey；完成后才验证真实新增消息是否生成正确 Observation。
 
 另外仍需：
 

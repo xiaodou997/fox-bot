@@ -1,0 +1,42 @@
+{
+  "schema_version": "foxbot.acceptance.g2c.v1",
+  "code_commit": "38c9ac665361c5956fc2ce7035ce4de1f88708fe",
+  "environment": {
+    "os": "macOS 27.0",
+    "arch": "arm64",
+    "wechat": "4.1.13"
+  },
+  "integration": {
+    "passed": true,
+    "source_sha256": "361b43fc49249d1e7ec3bb2362210ed264407ce593537041cd0fdf7a2f2f95e4",
+    "rust_tests": 118,
+    "cipher_disabled_tests": 1,
+    "python_tests": 49,
+    "swift_tests": 71,
+    "source_unchanged": true
+  },
+  "real_native_read": {
+    "status": "SNAPSHOT_RECEIVED",
+    "application_session_state": "STABLE_TWO_READS",
+    "conversation_fingerprint_state": "STABLE_TWO_READS",
+    "message_count": 12,
+    "partial_reasons": [
+      "HEURISTIC_REGION",
+      "UNKNOWN_DIRECTION"
+    ],
+    "worker": {
+      "starts": 1,
+      "successful_snapshots": 2,
+      "failures": 0,
+      "warmed": true
+    },
+    "raw_text_included": false,
+    "image_saved": false,
+    "write_or_send_operations": 0,
+    "observation_bridge": "PROVISIONAL_REQUIRES_CONFIGURED_IDENTITY_AND_ACCEPTED_GROUND_TRUTH"
+  },
+  "real_ground_truth": "NOT_RUN",
+  "observation_ingest": "NOT_RUN",
+  "external_model_requests": 0,
+  "write_or_send_operations": 0
+}
