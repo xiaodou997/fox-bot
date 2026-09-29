@@ -161,7 +161,9 @@ public enum WindowOCRProbe {
         let frame = try source.focusedFrame(app, pid: pid)
         guard frame.width >= 16, frame.height >= 16, frame.origin.x.isFinite, frame.origin.y.isFinite,
               frame.width.isFinite, frame.height.isFinite else { throw OCRFailure.focusedWindowUnavailable }
-        let matches = eligible.filter { sameWindowFrame($0.frame, frame) }
+        let geometricMatches = eligible.filter { sameWindowFrame($0.frame, frame) }
+        let activeMatches = geometricMatches.filter { $0.onScreen && $0.active }
+        let matches = geometricMatches.count > 1 && activeMatches.count == 1 ? activeMatches : geometricMatches
         let origins = eligible.filter { abs($0.frame.minX - frame.minX) <= 0.5 && abs($0.frame.minY - frame.minY) <= 0.5 }.count
         let sizes = eligible.filter { abs($0.frame.width - frame.width) <= 0.5 && abs($0.frame.height - frame.height) <= 0.5 }.count
         return (matches, WindowMatchSummary(candidateCount: eligible.count, originMatches: origins,

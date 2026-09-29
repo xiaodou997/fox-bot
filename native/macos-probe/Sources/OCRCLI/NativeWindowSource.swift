@@ -67,7 +67,7 @@ final class NativeWindowSource: WindowSource {
             let candidate = CaptureWindow(id: window.windowID, pid: pid, bundleID: app.bundleID,
                 frame: window.frame, contentSize: filter.contentRect.size, scale: Double(filter.pointPixelScale),
                 onScreen: window.isOnScreen, layer: window.windowLayer,
-                ownerPid: owner.processID, ownerBundleID: owner.bundleIdentifier)
+                active: window.isActive, ownerPid: owner.processID, ownerBundleID: owner.bundleIdentifier)
             result.append(candidate)
             selectedWindows[window.windowID] = window
         }
@@ -111,7 +111,8 @@ final class NativeWindowSource: WindowSource {
               let window = selectedWindows[candidate.id],
               window.owningApplication?.processID == candidate.ownerPid,
               window.owningApplication?.bundleIdentifier == candidate.ownerBundleID,
-              window.windowLayer == 0, window.frame == candidate.frame else {
+              window.windowLayer == 0, window.frame == candidate.frame,
+              window.isOnScreen == candidate.onScreen, window.isActive == candidate.active else {
             throw OCRFailure.invalidGeometry
         }
         let filter = SCContentFilter(desktopIndependentWindow: window)

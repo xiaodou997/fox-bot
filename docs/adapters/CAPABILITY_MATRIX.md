@@ -161,7 +161,7 @@ known_gaps:
 | --- | --- | --- | --- |
 | 微信进程家族绑定 | IMPLEMENTED | 根 bundle com.tencent.xinWeChat 唯一；只接受同一安装包内固定 com.tencent.flue.WeChatAppEx 子应用作为 compositor owner | 其他微信版本/安装路径、多个根实例 |
 | AX ↔ ScreenCaptureKit 绑定 | IMPLEMENTED | 使用 onScreenWindowsOnly=false 枚举，再由 AX 标准焦点窗口几何唯一匹配；不按标题/最大窗口猜测 | 不保证窗口内会话未切换 |
-| MC-WX 单窗口真实捕获 | IMPLEMENTED / LOCAL PASS | 微信4.1.13、macOS27/arm64：1个焦点匹配，IMAGE_OBTAINED，2240×2658，image_saved=false | OCR未在同次真实窗口链路完成；未测macOS26 |
+| MC-WX 单窗口真实捕获 | IMPLEMENTED / LOCAL PASS | 微信4.1.13、macOS27/arm64：同框 root/AppEx 候选由唯一 on-screen+active 窗口消歧，最终1个焦点匹配，IMAGE_OBTAINED，3574×2280，image_saved=false | OCR未在同次真实窗口链路完成；未测macOS26 |
 | MC-QQ | NOT RUN | QQ仍未运行 | 结构化读取、窗口家族、截图均待测 |
 
 [G2b-2说明](../development/G2_WINDOW_BINDING.md)记录根因和约束。此处的 LOCAL PASS 仅指一次真实单窗口图像取得，不提升 MC-WX 整体适配状态，也不证明聊天正文、发言人或发送能力。

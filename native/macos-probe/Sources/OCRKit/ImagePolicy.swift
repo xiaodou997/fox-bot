@@ -56,14 +56,15 @@ public struct CaptureWindow: Equatable {
     public let contentSize: CGSize
     public let scale: Double
     public let onScreen: Bool
+    public let active: Bool
     public let layer: Int
     public init(id: UInt32, pid: Int32, bundleID: String, frame: CGRect,
                 contentSize: CGSize, scale: Double, onScreen: Bool = true, layer: Int = 0,
-                ownerPid: Int32? = nil, ownerBundleID: String? = nil) {
+                active: Bool = false, ownerPid: Int32? = nil, ownerBundleID: String? = nil) {
         self.id = id; self.pid = pid; self.bundleID = bundleID
         self.ownerPid = ownerPid ?? pid; self.ownerBundleID = ownerBundleID ?? bundleID
         self.frame = frame; self.contentSize = contentSize; self.scale = scale
-        self.onScreen = onScreen; self.layer = layer
+        self.onScreen = onScreen; self.active = active; self.layer = layer
     }
     public func eligible(for app: TargetApp, pid: Int32, allowOffscreen: Bool = false) -> Bool {
         self.pid == pid && bundleID == app.bundleID && (allowOffscreen || onScreen) && layer == 0

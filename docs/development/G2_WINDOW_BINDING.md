@@ -28,7 +28,7 @@
 3. 子应用 executable 必须位于该唯一根应用 bundle 内，单纯伪造相同 bundle id 不进入候选。
 4. ScreenCaptureKit 使用 onScreenWindowsOnly=false，因为 AX 焦点窗口可能位于其他 Space 或被系统标为 off-screen。
 5. UNIQUE_WINDOW 模式仍只接受 on-screen 窗口；只有显式 FOCUSED_WINDOW 模式允许离屏候选。
-6. AX 标准焦点窗口几何必须在应用家族候选中唯一完整匹配；重复同框或无匹配都拒绝。
+6. AX 标准焦点窗口先按几何完整匹配。若存在多个同框候选，只在其中恰好一个同时为 ScreenCaptureKit 的 on-screen + active 窗口时选择它；否则继续拒绝为歧义。不会按候选顺序、PID、新旧时间或大小排序。
 7. 捕获前再次验证根进程、子进程 bundle/路径、窗口 ID/owner/几何/内容尺寸/scale；捕获后仍执行稳定性复核。
 
 没有引入标题匹配、联系人字符串、最大窗口启发式、旧 PID 白名单或整屏 fallback。
@@ -65,7 +65,7 @@ capture-only 仍执行同一目标绑定、ScreenCaptureKit 单窗口捕获和�
   "eligible_windows": 1,
   "capture_state": "IMAGE_OBTAINED",
   "window_stable": true,
-  "image": {"width": 2240, "height": 2658, "downscaled": false},
+  "image": {"width": 3574, "height": 2280, "downscaled": false},
   "ocr_requested": false,
   "ocr_attempted": false,
   "image_saved": false,
@@ -74,6 +74,8 @@ capture-only 仍执行同一目标绑定、ScreenCaptureKit 单窗口捕获和�
 ~~~
 
 报告没有窗口标题、窗口 ID、PID、联系人或正文。图像只存在于进程内存，没有写文件。
+
+固定提交前的复测还出现了两个完全同几何候选：当前 root 窗口为 on-screen + active，AppEx 镜像为 off-screen + inactive。新增的二次消歧只接受前者；合成测试同时验证“两个同框但没有唯一 active 窗口”仍返回歧义。最终真实报告中 origin_matches=2、size_matches=2，而消歧后的 frame_matches=1。
 
 同一阶段的真实 capture-and-ocr 一次性进程仍可在 Vision 阶段超过外层 30 秒而被终止；该情况保守记录 capture/OCR UNKNOWN，不拿 capture-only 的成功替它补成 OCR 成功。
 
