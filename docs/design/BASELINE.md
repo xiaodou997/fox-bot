@@ -3,7 +3,7 @@
 - 文档编号：FB-BASELINE-001
 - 日期：2026-09-28
 - 性质：实现前设计基线，不是产品 v0.1 发布或功能冻结声明。
-- 当前实现：G1a～G1c 与 G2a/G2b 之上已收口[G2c 会话身份与 Rust Host](../development/G2C_IDENTITY_HOST.md)。真实微信私有快照已由 Rust host 连续两次获取且 application-session / conversation fingerprint 稳定；只有应用运行会话、用户显式 Binding、视觉指纹、至少两条跨帧连续性和已接受 ground-truth 同时成立时才允许形成新 Observation。真实 ground-truth 尚未建立，因此当前真实桥接仍为 PROVISIONAL；G2d 将验证真实 Observation，真实发送未验收。
+- 当前实现：G1a～G1c、G2a/G2b/G2c 之上已加入[G2d Observation Bridge](../development/G2D_OBSERVATION_BRIDGE.md)。合成可信快照已实际进入 Runtime::ingest，并验证 baseline/new/no-change、歧义零写入和背压幂等恢复；真实微信没有 accepted ground-truth 与显式 Binding，因此真实 Observation ingest 仍 BLOCKED。真实发送未验收。
 - 关联：[文档导航](../README.md) · [适配矩阵](../adapters/CAPABILITY_MATRIX.md) · [验收清单](../acceptance/ACCEPTANCE_CHECKLIST.md) · [来源审计](../references/UPSTREAM_AUDIT.md)
 
 ## 1. 已确定的目标与约束

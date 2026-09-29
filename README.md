@@ -2,7 +2,7 @@
 
 面向微信、QQ、飞书和 X 私信的跨平台消息自动化客户端。
 
-**当前状态：G2c 会话身份、ground-truth 门禁和 Rust 原生读取宿主已进入实现阶段。** 微信 4.1.13 的 Rust host → 持久 OCR worker → 私有 MessageSnapshot 已真实跑通；公开探针连续两读确认应用运行会话和会话视觉指纹稳定，但没有真实 ground-truth 接受记录与显式会话绑定，因此 Observation 桥接仍保持 PROVISIONAL。QQ 当前未运行。真实发送、桌面界面和 APK 尚未实现。
+**当前状态：G2d Observation Bridge 实现与合成 Runtime 验收已通过。** `PrivateMessageSnapshot → NativeObservationBridge → Runtime::ingest` 已具备 baseline/new/duplicate/ambiguous/backpressure 恢复语义，并进入一键门禁；真实微信仍没有 accepted ground-truth 与显式 Binding，因此真实 Observation ingest 保持 BLOCKED。QQ 当前未运行。真实发送、桌面界面和 APK 尚未实现。
 
 ## 产品边界
 
@@ -97,6 +97,16 @@ worker 在独立进程内先用 64×64 空白图预热 Apple Vision，再复用�
 
 G2c 将应用运行会话指纹、会话标题指纹、用户显式 Binding、identity_epoch 和跨帧消息连续性组合使用；标题哈希或窗口几何都不能单独成为稳定会话身份。ground-truth 原始标注只能放在 Git 忽略的 target/g2c-groundtruth/，输出只含误差计数。真实标注尚未执行，因此当前真实微信只读探针仍不会生成可进入自动回复链的 Observation。详见 [G2c说明](docs/development/G2C_IDENTITY_HOST.md)。
 
+## G2d Observation Bridge
+
+```bash
+cargo run --locked -p foxbot-host -- \
+  bridge-sim-probe target/g2d-smoke \
+  --allow-plaintext-synthetic
+```
+
+该入口只使用合成快照和本地 SQLite Runtime：首帧只 baseline，下一帧只把可信新增 incoming 排队，重放为 NO_CHANGE；不会启动模型、HTTP 或聊天原生写入。真实微信 Observation 验收仍要求专用测试会话的人工 ground-truth 和显式 Binding。详见 [G2d说明](docs/development/G2D_OBSERVATION_BRIDGE.md)。
+
 ## 文档入口
 
 | 文档 | 内容 |
@@ -107,6 +117,8 @@ G2c 将应用运行会话指纹、会话标题指纹、用户显式 Binding、id
 | [验收清单](docs/acceptance/ACCEPTANCE_CHECKLIST.md) | 公共核心、平台、OCR、自动发送、值守与发布测试 |
 | [验收回执模板](docs/acceptance/RECEIPT_TEMPLATE.md) | 测试版本、环境、操作、证据、结果和未覆盖范围 |
 | [上游与技术来源审计](docs/references/UPSTREAM_AUDIT.md) | 固定提交、参考路径、许可证与复用边界 |
+| [G2c 会话身份与 Rust Host](docs/development/G2C_IDENTITY_HOST.md) | 稳定会话身份、ground-truth 门禁和 Rust 原生读取宿主 |
+| [G2d Observation Bridge](docs/development/G2D_OBSERVATION_BRIDGE.md) | 私有快照到 Runtime ingest、幂等恢复与真实验收边界 |
 
 ## 开发顺序
 

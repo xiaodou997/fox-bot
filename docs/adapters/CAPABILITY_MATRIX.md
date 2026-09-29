@@ -190,3 +190,15 @@ known_gaps:
 | MC-WX Rust 只读探针 | LOCAL PASS | 连续两读应用会话与会话指纹稳定，私有快照已收到；公开输出无正文/哈希值 | Observation 固定 PROVISIONAL，直到真实 GT + 显式 Binding |
 
 [G2c说明](../development/G2C_IDENTITY_HOST.md)记录门禁细节。G2c 没有新增任何原生写入/点击/发送能力。
+
+### G2d Observation Bridge（真实发送仍关闭）
+
+| 对象 | 实现 | 本轮状态 | 未覆盖 |
+| --- | --- | --- | --- |
+| Snapshot → Runtime | IMPLEMENTED / SYNTHETIC PASS | baseline 3 条、下一帧 1 条 queued、重放 NO_CHANGE；Runtime messages=4，tasks/ready/send=0 | 真实微信没有 accepted GT + Binding |
+| 游标提交 | IMPLEMENTED / PASS | Runtime 全部接收后才提交 bridge cursor；失败时可重试相同 canonical IDs | 跨进程持久化 bridge cursor 尚未设计 |
+| Backpressure 恢复 | IMPLEMENTED / PASS | 中途失败后已写 prefix 在重试中为 Duplicate，后缀不丢失 | 生产背压策略仍由宿主调度决定 |
+| PROVISIONAL / AMBIGUOUS | IMPLEMENTED / PASS | 不调用 Runtime::ingest，不产生消息 | 无 |
+| MC-WX 真实 Observation | BLOCKED | 后续真实读取出现 TARGET_CHANGED / NO_ELIGIBLE_WINDOW，并且缺真实 GT/Binding | 专用测试会话人工验收 |
+
+[G2d说明](../development/G2D_OBSERVATION_BRIDGE.md)和[回执](../acceptance/receipts/2026-09-29-g2d-observation-bridge.md)记录固定提交证据。G2d 没有调用 AI，也没有增加聊天写入/发送能力。

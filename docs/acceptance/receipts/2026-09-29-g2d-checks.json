@@ -1,0 +1,47 @@
+{
+  "schema_version": "foxbot.acceptance.g2d.v1",
+  "code_commit": "89d81649f8a6330081f76bca203b65ce6ad7de50",
+  "integration": {
+    "passed": true,
+    "source_sha256": "9a911413bcafe57974df03979f8825fc71750cde79668efbca7ac5897a17a649",
+    "rust_tests": 121,
+    "cipher_disabled_tests": 1,
+    "python_tests": 49,
+    "swift_tests": 71,
+    "g2d_bridge_smoke": true,
+    "source_unchanged": true
+  },
+  "synthetic_bridge": {
+    "status": "PASS",
+    "baseline": {
+      "observations": 3,
+      "baselined": 3
+    },
+    "new": {
+      "observations": 1,
+      "queued": 1
+    },
+    "repeat": {
+      "observations": 0,
+      "state": "NO_CHANGE"
+    },
+    "runtime": {
+      "messages": 4,
+      "tasks": 0,
+      "ready": 0,
+      "unresolved_sends": 0
+    }
+  },
+  "real_observation_bridge": {
+    "status": "BLOCKED",
+    "reasons": [
+      "REAL_GROUND_TRUTH_NOT_ACCEPTED",
+      "EXPLICIT_BINDING_NOT_CONFIGURED",
+      "TARGET_CHANGED_DURING_FOLLOWUP_READ"
+    ],
+    "runtime_ingest_performed": false
+  },
+  "external_model_requests": 0,
+  "native_chat_operations": 0,
+  "write_or_send_operations": 0
+}
