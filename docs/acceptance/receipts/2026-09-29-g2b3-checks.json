@@ -1,0 +1,90 @@
+{
+  "schema_version": "foxbot.acceptance.g2b3.v1",
+  "code_commit": "8ad545cd31a00f6ad97de956e1add30d5e555424",
+  "environment": {
+    "os": "macOS 27.0",
+    "arch": "arm64",
+    "wechat": "4.1.13"
+  },
+  "integration": {
+    "passed": true,
+    "source_sha256": "764d18691783c06b788579a69811080cf044a59696a8b5e2b35049b03fad23fa",
+    "rust_tests": 106,
+    "cipher_disabled_tests": 1,
+    "python_tests": 44,
+    "swift_tests": 67,
+    "source_unchanged": true
+  },
+  "worker": {
+    "status": "OK",
+    "reused": true,
+    "warmup_elapsed_milliseconds": 30694,
+    "raw_text_included": false,
+    "image_saved": false,
+    "network_requests": 0
+  },
+  "real_ocr": [
+    {
+      "status": "OCR_SUMMARY",
+      "elapsed_milliseconds": 1030,
+      "ocr_lines": 19,
+      "character_count": 206,
+      "low_confidence_lines": 13,
+      "capture_state": "IMAGE_OBTAINED",
+      "window_stable": true,
+      "image": {
+        "width": 2240,
+        "height": 2658,
+        "downscaled": false
+      },
+      "content_scope": "CHAT_REGION_HEURISTIC",
+      "message_summary": {
+        "strategy": "WECHAT_HEURISTIC_V0",
+        "message_count": 10,
+        "me_count": 3,
+        "them_count": 7,
+        "unknown_count": 0,
+        "sender_labeled_count": 6,
+        "used_line_count": 11,
+        "complete": false,
+        "partial_reasons": [
+          "HEURISTIC_REGION"
+        ]
+      }
+    },
+    {
+      "status": "OCR_SUMMARY",
+      "elapsed_milliseconds": 777,
+      "ocr_lines": 19,
+      "character_count": 206,
+      "low_confidence_lines": 13,
+      "capture_state": "IMAGE_OBTAINED",
+      "window_stable": true,
+      "image": {
+        "width": 2240,
+        "height": 2658,
+        "downscaled": false
+      },
+      "content_scope": "CHAT_REGION_HEURISTIC",
+      "message_summary": {
+        "strategy": "WECHAT_HEURISTIC_V0",
+        "message_count": 10,
+        "me_count": 3,
+        "them_count": 7,
+        "unknown_count": 0,
+        "sender_labeled_count": 6,
+        "used_line_count": 11,
+        "complete": false,
+        "partial_reasons": [
+          "HEURISTIC_REGION"
+        ]
+      }
+    }
+  ],
+  "conversation_identity": "UNVERIFIED",
+  "qq": {
+    "status": "NOT_RUNNING"
+  },
+  "external_model_requests": 0,
+  "write_or_send_operations": 0
+}

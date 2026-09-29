@@ -4,6 +4,7 @@
 - 状态：worker、预热、微信聊天 ROI 与只读 MessageSnapshot 已实现；真实微信 4.1.13 持久 worker OCR 已通过本地脱敏验证。会话身份、人工标注准确率、QQ 与发送仍未验收。
 - 前置：[G2b-2 窗口身份绑定](G2_WINDOW_BINDING.md) · [G2b-1 本地 OCR](G2_WINDOW_OCR.md)
 - 关联：[能力矩阵](../adapters/CAPABILITY_MATRIX.md) · [来源审计](../references/UPSTREAM_AUDIT.md)
+- 实际结果：[G2b-3 本地验收回执](../acceptance/receipts/2026-09-29-g2b3-ocr-worker.md)
 
 ## 1. 为什么要持久 worker
 
