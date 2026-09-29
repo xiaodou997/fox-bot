@@ -47,20 +47,26 @@ public struct ImagePlan: Equatable {
 /// Private-to-process target evidence, never serialized as a public report or used as send authority.
 public struct CaptureWindow: Equatable {
     public let id: UInt32
+    /// Stable target root process identity. The compositor owner may be a verified child app.
     public let pid: Int32
     public let bundleID: String
+    public let ownerPid: Int32
+    public let ownerBundleID: String
     public let frame: CGRect
     public let contentSize: CGSize
     public let scale: Double
     public let onScreen: Bool
     public let layer: Int
     public init(id: UInt32, pid: Int32, bundleID: String, frame: CGRect,
-                contentSize: CGSize, scale: Double, onScreen: Bool = true, layer: Int = 0) {
-        self.id = id; self.pid = pid; self.bundleID = bundleID; self.frame = frame
-        self.contentSize = contentSize; self.scale = scale; self.onScreen = onScreen; self.layer = layer
+                contentSize: CGSize, scale: Double, onScreen: Bool = true, layer: Int = 0,
+                ownerPid: Int32? = nil, ownerBundleID: String? = nil) {
+        self.id = id; self.pid = pid; self.bundleID = bundleID
+        self.ownerPid = ownerPid ?? pid; self.ownerBundleID = ownerBundleID ?? bundleID
+        self.frame = frame; self.contentSize = contentSize; self.scale = scale
+        self.onScreen = onScreen; self.layer = layer
     }
-    public func eligible(for app: TargetApp, pid: Int32) -> Bool {
-        self.pid == pid && bundleID == app.bundleID && onScreen && layer == 0
+    public func eligible(for app: TargetApp, pid: Int32, allowOffscreen: Bool = false) -> Bool {
+        self.pid == pid && bundleID == app.bundleID && (allowOffscreen || onScreen) && layer == 0
     }
     public var hasValidGeometry: Bool {
         frame.origin.x.isFinite && frame.origin.y.isFinite && frame.width.isFinite && frame.height.isFinite

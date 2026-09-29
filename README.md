@@ -2,7 +2,7 @@
 
 面向微信、QQ、飞书和 X 私信的跨平台消息自动化客户端。
 
-**当前状态：G2b-1 单窗口截图与 Apple Vision 本地 OCR 实现已落地，保留 G1 集成与 G2a AX 探针。** 合成 OCR 有实际测试；微信窗口绑定尚未通过，QQ 当前未运行。完整消息适配器、真实发送、桌面界面和 APK 尚未实现；不把合成图识别当作微信端到端可用，也不宣布完整 G1/G2 Freeze。
+**当前状态：G2b-2 窗口身份绑定已落地，保留 G1 集成、G2a AX 探针和 G2b-1 本地 Vision OCR。** 微信 4.1.13 已取得一次真实单窗口内存捕获证据；图片未保存、正文未输出，真实窗口 OCR 仍受一次性 Vision 冷启动影响而未验收。QQ 当前未运行。完整消息适配器、真实发送、桌面界面和 APK 尚未实现。
 
 ## 产品边界
 
@@ -70,6 +70,14 @@ python3 scripts/macos_ocr.py --app wechat --capture-and-ocr --focused-window
 ```
 
 第一条不截图；第二条显式绑定既有焦点窗口，只有权限、几何与唯一性均满足时才调用单窗口捕获和本地 OCR。输出只含统计，不保存图像或正文。多窗口歧义或 AX/SCK 几何不匹配时停止，不退回整屏截图。当前实机阻塞、合成测试及预算见 [G2b-1 开发说明](docs/development/G2_WINDOW_OCR.md)。
+
+## G2b-2 窗口身份绑定
+
+~~~bash
+python3 scripts/macos_ocr.py --app wechat --capture-only --focused-window
+~~~
+
+微信 4.x 的 AX 根进程与实际大窗口 compositor 进程不同，而且主窗口可能不在 onScreen-only 列表中。G2b-2 只接受固定应用家族、安装包内子进程和 AX 几何唯一匹配；不靠标题、最大窗口或 PID 猜测。真实微信 4.1.13 已取得一次 CAPTURE_SUMMARY，图片只在内存中出现。实现与边界见 [G2b-2说明](docs/development/G2_WINDOW_BINDING.md)。
 
 ## 文档入口
 

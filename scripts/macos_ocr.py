@@ -11,7 +11,8 @@ from macos_probe import ROOT, locate_probe, supervise, unique_object
 BINARIES = [ROOT / "target/macos-probe/out/Products/Debug/foxbot-macos-ocr",
             ROOT / "target/macos-probe/debug/foxbot-macos-ocr"]
 SUMMARY = {"OCR_SUMMARY", "OCR_PARTIAL_SUMMARY", "OCR_EMPTY"}
-STATUS = SUMMARY | {"METADATA_ONLY", "NOT_RUNNING", "AMBIGUOUS_INSTANCE", "PERMISSION_REQUIRED",
+CAPTURE_SUMMARY = {"CAPTURE_SUMMARY"}
+STATUS = SUMMARY | CAPTURE_SUMMARY | {"METADATA_ONLY", "NOT_RUNNING", "AMBIGUOUS_INSTANCE", "PERMISSION_REQUIRED",
                     "NO_ELIGIBLE_WINDOW", "AMBIGUOUS_WINDOW", "TARGET_CHANGED", "INVALID_GEOMETRY",
                     "RESOURCE_LIMIT", "ENUMERATION_FAILED", "CAPTURE_FAILED", "CAPTURE_SIZE_MISMATCH",
                     "OCR_FAILED", "LANGUAGE_UNAVAILABLE", "TIME_BUDGET_EXCEEDED", "ACCESSIBILITY_REQUIRED", "NO_FOCUSED_WINDOW"}
@@ -22,14 +23,14 @@ def integer(value, low, high):
     return type(value) is int and low <= value <= high
 
 
-def safe_ocr_report(data: bytes, app: str, capture: bool, focused: bool = False) -> dict:
+def safe_ocr_report(data: bytes, app: str, capture: bool, focused: bool = False, ocr: bool = True) -> dict:
     if len(data) > 16384:
         raise ValueError("report size")
     report = json.loads(data, object_pairs_hook=unique_object)
     required = {"schema_version", "app", "bundle_id", "os_version", "snapshot_id", "read_only",
                 "raw_text_included", "image_saved", "network_requests", "capture_scope", "content_scope", "selection_mode",
                 "account_identity", "conversation_identity", "send_capability", "capture_requested",
-                "screen_capture_preflight", "running_instances", "status", "capture_state", "ocr_attempted"}
+                "ocr_requested", "screen_capture_preflight", "running_instances", "status", "capture_state", "ocr_attempted"}
     optional = {"application_version", "eligible_windows", "window_stable", "image", "ocr", "window_matching"}
     if not isinstance(report, dict) or not required <= report.keys() or report.keys() - required - optional:
         raise ValueError("report fields")
@@ -43,6 +44,7 @@ def safe_ocr_report(data: bytes, app: str, capture: bool, focused: bool = False)
         raise ValueError("bound identity")
     if (report["read_only"] is not True or report["raw_text_included"] is not False
             or report["image_saved"] is not False or report["capture_requested"] is not capture
+            or report["ocr_requested"] is not (capture and ocr)
             or not integer(report["network_requests"], 0, 0)
             or type(report["screen_capture_preflight"]) is not bool or type(report["ocr_attempted"]) is not bool
             or not integer(report["running_instances"], 0, 1024)
@@ -109,8 +111,14 @@ def safe_ocr_report(data: bytes, app: str, capture: bool, focused: bool = False)
     if status == "TARGET_CHANGED":
         if report.get("window_stable") is not False or "ocr" in report:
             raise ValueError("stale result")
-    elif "window_stable" in report and status not in SUMMARY:
+    elif "window_stable" in report and status not in SUMMARY | CAPTURE_SUMMARY:
         raise ValueError("unsupported stability claim")
+    if status == "CAPTURE_SUMMARY":
+        if (state != "IMAGE_OBTAINED" or "image" not in report or report["ocr_attempted"]
+                or "ocr" in report or report.get("window_stable") is not True or windows != 1
+                or report["ocr_requested"] is not False):
+            raise ValueError("missing capture-only evidence")
+        return report
     if status not in SUMMARY:
         if "ocr" in report:
             raise ValueError("OCR payload on failure")
@@ -152,12 +160,16 @@ def failure_report(status: str, app: str, capture: bool, started: bool) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--app", choices=["wechat", "qq"], required=True)
-    parser.add_argument("--capture-and-ocr", action="store_true", help="allow exactly one on-screen target window; no whole-screen fallback")
+    parser.add_argument("--capture-and-ocr", action="store_true", help="capture exactly one verified target window and run local OCR; no whole-screen fallback")
+    parser.add_argument("--capture-only", action="store_true", help="capture exactly one verified target window without running OCR")
     parser.add_argument("--focused-window", action="store_true", help="explicitly bind the application's existing AX focused standard window; never activate it")
     parser.add_argument("--timeout-seconds", type=int, choices=range(1, 31), default=15)
     args = parser.parse_args()
-    if args.focused_window and not args.capture_and_ocr:
-        parser.error("--focused-window requires --capture-and-ocr")
+    if args.capture_and_ocr and args.capture_only:
+        parser.error("choose only one capture mode")
+    capture = args.capture_and_ocr or args.capture_only
+    if args.focused_window and not capture:
+        parser.error("--focused-window requires a capture mode")
     status, binary = locate_probe(candidates=BINARIES)
     data, started = b"", False
     if sys.platform != "darwin":
@@ -166,6 +178,8 @@ def main() -> int:
         command = [str(binary), "--app", args.app]
         if args.capture_and_ocr:
             command.append("--capture-and-ocr")
+        elif args.capture_only:
+            command.append("--capture-only")
         if args.focused_window:
             command.append("--focused-window")
         try:
@@ -175,13 +189,13 @@ def main() -> int:
             status = "PROCESS_FAILED"
     if status == "OK":
         try:
-            report = safe_ocr_report(data, args.app, args.capture_and_ocr, args.focused_window)
+            report = safe_ocr_report(data, args.app, capture, args.focused_window, args.capture_and_ocr)
         except (ValueError, KeyError, TypeError, AttributeError, RecursionError, OverflowError):
             status = "INVALID_REPORT"
         else:
             print(json.dumps(report, ensure_ascii=False, indent=2))
             return 0  # A negative capability observation is valid, not an acceptance PASS.
-    print(json.dumps(failure_report(status, args.app, args.capture_and_ocr, started)))
+    print(json.dumps(failure_report(status, args.app, capture, started)))
     return 2
 
 

@@ -154,3 +154,14 @@ known_gaps:
 | 消息 / 草稿 / 自动回复 | 尚未从窗口 OCR 建立完整适配 | 账号/会话 UNVERIFIED；不声称 C02～C10 已通过 |
 
 [开发与运行边界](../development/G2_WINDOW_OCR.md)记录冷启动、原生初始化修复及未完成项；输出统计不是正文或发送授权。
+
+### G2b-2 窗口身份绑定（不是应用 ACCEPTED）
+
+| 对象 | 实现 | 本轮环境观察 | 未覆盖 |
+| --- | --- | --- | --- |
+| 微信进程家族绑定 | IMPLEMENTED | 根 bundle com.tencent.xinWeChat 唯一；只接受同一安装包内固定 com.tencent.flue.WeChatAppEx 子应用作为 compositor owner | 其他微信版本/安装路径、多个根实例 |
+| AX ↔ ScreenCaptureKit 绑定 | IMPLEMENTED | 使用 onScreenWindowsOnly=false 枚举，再由 AX 标准焦点窗口几何唯一匹配；不按标题/最大窗口猜测 | 不保证窗口内会话未切换 |
+| MC-WX 单窗口真实捕获 | IMPLEMENTED / LOCAL PASS | 微信4.1.13、macOS27/arm64：1个焦点匹配，IMAGE_OBTAINED，2240×2658，image_saved=false | OCR未在同次真实窗口链路完成；未测macOS26 |
+| MC-QQ | NOT RUN | QQ仍未运行 | 结构化读取、窗口家族、截图均待测 |
+
+[G2b-2说明](../development/G2_WINDOW_BINDING.md)记录根因和约束。此处的 LOCAL PASS 仅指一次真实单窗口图像取得，不提升 MC-WX 整体适配状态，也不证明聊天正文、发言人或发送能力。

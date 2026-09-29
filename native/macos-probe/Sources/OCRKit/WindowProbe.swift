@@ -52,6 +52,7 @@ public struct WindowOCRReport: Encodable {
     public let osVersion: String
     public let applicationVersion: String?
     public let captureRequested: Bool
+    public let ocrRequested: Bool
     public let selectionMode: WindowSelectionMode
     public let screenCapturePreflight: Bool
     public let runningInstances: Int
@@ -76,7 +77,7 @@ public func captureGate(instances: Int, requested: Bool, permission: Bool) -> St
 
 public enum WindowOCRProbe {
     /// No retries and no whole-display fallback. Unknown identity never becomes a send target.
-    public static func run(app: TargetApp, requested: Bool, source: WindowSource,
+    public static func run(app: TargetApp, requested: Bool, ocrRequested: Bool = true, source: WindowSource,
                            selection: WindowSelectionMode = .unique,
                            recognize: (CGImage) throws -> OCRSnapshot = VisionOCR.recognize,
                            now: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) async -> WindowOCRReport {
@@ -84,7 +85,8 @@ public enum WindowOCRProbe {
         let metadata = source.metadata(app)
         var report = WindowOCRReport(app: app.rawValue, bundleId: app.bundleID,
             osVersion: metadata.osVersion, applicationVersion: metadata.applicationVersion,
-            captureRequested: requested, selectionMode: selection, screenCapturePreflight: metadata.permission,
+            captureRequested: requested, ocrRequested: requested && ocrRequested,
+            selectionMode: selection, screenCapturePreflight: metadata.permission,
             runningInstances: metadata.runningInstances)
         report.status = captureGate(instances: metadata.runningInstances, requested: requested, permission: metadata.permission)
         guard report.status == "READY" else { return report }
@@ -126,6 +128,11 @@ public enum WindowOCRProbe {
             report.status = "TARGET_CHANGED"; report.windowStable = false; return report
         }
         guard now() - started < 10 else { report.status = "TIME_BUDGET_EXCEEDED"; return report }
+        if !report.ocrRequested {
+            report.windowStable = true
+            report.status = "CAPTURE_SUMMARY"
+            return report
+        }
         report.ocrAttempted = true
         let snapshot: OCRSnapshot
         do { snapshot = try recognize(image) }
@@ -147,7 +154,9 @@ public enum WindowOCRProbe {
                                    _ source: WindowSource) async throws -> (windows: [CaptureWindow], matching: WindowMatchSummary?) {
         let windows = try await source.windows(app, pid: pid)
         guard windows.count <= 4096 else { throw OCRFailure.resourceLimit }
-        let eligible = windows.filter { $0.eligible(for: app, pid: pid) }
+        let eligible = windows.filter {
+            $0.eligible(for: app, pid: pid, allowOffscreen: selection == .focused)
+        }
         guard selection == .focused else { return (eligible, nil) }
         let frame = try source.focusedFrame(app, pid: pid)
         guard frame.width >= 16, frame.height >= 16, frame.origin.x.isFinite, frame.origin.y.isFinite,

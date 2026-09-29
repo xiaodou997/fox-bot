@@ -103,6 +103,25 @@ final class WindowProbeTests: XCTestCase {
         let report = await WindowOCRProbe.run(app: .wechat, requested: true, source: source, selection: .focused)
         XCTAssertEqual(report.status, "NO_ELIGIBLE_WINDOW"); XCTAssertEqual(source.captures, 0)
     }
+    func testFocusedModeCanBindVerifiedOffscreenCompositorWindow() async {
+        let source = FakeWindowSource()
+        source.items = [CaptureWindow(id: 7, pid: 42, bundleID: TargetApp.wechat.bundleID,
+            frame: source.focusFrameValue, contentSize: source.focusFrameValue.size, scale: 1,
+            onScreen: false, ownerPid: 77, ownerBundleID: "com.tencent.flue.WeChatAppEx")]
+        let focused = await WindowOCRProbe.run(app: .wechat, requested: true, source: source,
+            selection: .focused, recognize: fakeRecognition)
+        XCTAssertEqual(focused.status, "OCR_SUMMARY")
+        XCTAssertEqual(source.captures, 1)
+    }
+    func testUniqueModeStillRejectsOffscreenOnlyWindow() async {
+        let source = FakeWindowSource()
+        source.items = [CaptureWindow(id: 7, pid: 42, bundleID: TargetApp.wechat.bundleID,
+            frame: source.focusFrameValue, contentSize: source.focusFrameValue.size, scale: 1,
+            onScreen: false, ownerPid: 77, ownerBundleID: "com.tencent.flue.WeChatAppEx")]
+        let report = await WindowOCRProbe.run(app: .wechat, requested: true, source: source)
+        XCTAssertEqual(report.status, "NO_ELIGIBLE_WINDOW")
+        XCTAssertEqual(source.captures, 0)
+    }
     func testWindowChangeBeforeCaptureDoesNotFallBackToDisplay() async {
         let source = FakeWindowSource(); source.changeAt = 2
         let report = await WindowOCRProbe.run(app: .wechat, requested: true, source: source)
@@ -158,6 +177,19 @@ final class WindowProbeTests: XCTestCase {
         XCTAssertEqual(report.conversationIdentity, "UNVERIFIED")
         let json = String(decoding: try JSONEncoder().encode(report), as: UTF8.self)
         XCTAssertFalse(json.contains("SYNTHETIC_PRIVATE")); XCTAssertFalse(json.contains("windowID"))
+    }
+    func testCaptureOnlyReturnsVerifiedImageWithoutInvokingOCR() async {
+        let source = FakeWindowSource()
+        let report = await WindowOCRProbe.run(app: .wechat, requested: true, ocrRequested: false,
+            source: source, recognize: { _ in
+                XCTFail("capture-only must not invoke OCR")
+                return fakeRecognition(imageFixture(text: false))
+            })
+        XCTAssertEqual(report.status, "CAPTURE_SUMMARY")
+        XCTAssertEqual(report.captureState, "IMAGE_OBTAINED")
+        XCTAssertEqual(report.windowStable, true)
+        XCTAssertFalse(report.ocrAttempted)
+        XCTAssertNil(report.ocr)
     }
     func testPartialRecognitionIsNotCompleteAndEmptyIsNotChatState() async {
         let source = FakeWindowSource()

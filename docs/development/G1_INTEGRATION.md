@@ -48,6 +48,6 @@ python3 scripts/g1_integration_check.py --with-macos-probe
 
 ## 4. 下一阶段的具体边界
 
-G2a 是“可读性报告”，独立于持续宿主和 ReplyProvider；报告不是 MessageEvent，不能直接入发件箱。[G2b-1](G2_WINDOW_OCR.md) 已增加单窗口截图/本地 Vision OCR 实现和合成证据，真实微信窗口绑定与运行中 QQ 证据尚待关闭；下一项 G2b-2 优先处理原生选窗与实际捕获验收。
+G2a 是“可读性报告”，独立于持续宿主和 ReplyProvider；报告不是 MessageEvent，不能直接入发件箱。[G2b-1](G2_WINDOW_OCR.md) 增加单窗口截图/本地 Vision OCR，[G2b-2](G2_WINDOW_BINDING.md) 已取得微信4.1.13的真实单窗口捕获证据。真实窗口 OCR、运行中 QQ、聊天区域和会话身份仍待关闭。
 
 只有得到真实账号/会话、消息顺序/方向、草稿和目标新鲜度证据后，才设计映射到核心 Observation 的桥接。最终真实发送仍必须单独进入 G3 专用测试会话验收；G1管理与存储缺口在允许持久化真实消息前关闭。

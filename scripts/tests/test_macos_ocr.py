@@ -12,7 +12,7 @@ def report():
             "read_only": True, "raw_text_included": False, "image_saved": False, "network_requests": 0,
             "capture_scope": "SINGLE_WINDOW", "content_scope": "WINDOW_NOT_CHAT", "selection_mode": "UNIQUE_WINDOW",
             "account_identity": "UNVERIFIED", "conversation_identity": "UNVERIFIED", "send_capability": "NOT_IMPLEMENTED",
-            "capture_requested": True, "screen_capture_preflight": True, "running_instances": 1,
+            "capture_requested": True, "ocr_requested": True, "screen_capture_preflight": True, "running_instances": 1,
             "eligible_windows": 1, "status": "OCR_SUMMARY", "capture_state": "IMAGE_OBTAINED", "ocr_attempted": True,
             "window_stable": True, "image": {"width": 1200, "height": 700, "downscaled": False},
             "ocr": {"line_count": 2, "character_count": 20, "low_confidence_lines": 1, "partial_reasons": [],
@@ -51,8 +51,9 @@ class WindowOCRSchemaTests(unittest.TestCase):
     def test_default_metadata_cannot_contain_capture_evidence(self):
         item = report()
         for key in ("eligible_windows", "window_stable", "image", "ocr"): item.pop(key)
-        item.update(status="METADATA_ONLY", capture_requested=False, capture_state="NOT_ATTEMPTED", ocr_attempted=False)
-        safe_ocr_report(json.dumps(item).encode(), "wechat", False)
+        item.update(status="METADATA_ONLY", capture_requested=False, ocr_requested=False,
+                    capture_state="NOT_ATTEMPTED", ocr_attempted=False)
+        safe_ocr_report(json.dumps(item).encode(), "wechat", False, ocr=False)
         item["capture_state"] = "IMAGE_OBTAINED"
         with self.assertRaises(ValueError): safe_ocr_report(json.dumps(item).encode(), "wechat", False)
 
@@ -86,6 +87,15 @@ class WindowOCRSchemaTests(unittest.TestCase):
         item = report(); item["selection_mode"] = "FOCUSED_WINDOW"
         with self.assertRaises(ValueError): self.verify(item)
         safe_ocr_report(json.dumps(item).encode(), "wechat", True, True)
+
+    def test_capture_only_has_image_evidence_without_ocr(self):
+        item = report()
+        item.pop("ocr")
+        item.update(status="CAPTURE_SUMMARY", ocr_requested=False, ocr_attempted=False)
+        safe_ocr_report(json.dumps(item).encode(), "wechat", True, False, False)
+        item["ocr_attempted"] = True
+        with self.assertRaises(ValueError):
+            safe_ocr_report(json.dumps(item).encode(), "wechat", True, False, False)
 
     def test_matching_diagnostics_do_not_allow_raw_geometry_or_contradictory_counts(self):
         item = report(); item["selection_mode"] = "FOCUSED_WINDOW"

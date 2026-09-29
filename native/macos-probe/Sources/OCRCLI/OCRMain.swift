@@ -9,12 +9,12 @@ struct OCRMain {
     static func main() async {
         let arguments = Array(CommandLine.arguments.dropFirst())
         if arguments.isEmpty || arguments == ["--help"] {
-            print("foxbot-macos-ocr --app <qq|wechat> [--capture-and-ocr [--focused-window]]\nNo screenshot by default. Explicit capture uses one unambiguous on-screen window; only redacted statistics are printed.")
+            print("foxbot-macos-ocr --app <qq|wechat> [--capture-only|--capture-and-ocr] [--focused-window]\nNo screenshot by default. Explicit capture uses one unambiguous target window; only redacted statistics are printed.")
             return
         }
         guard (2...4).contains(arguments.count), arguments[0] == "--app",
               let app = TargetApp(rawValue: arguments[1]),
-              (arguments.count == 2 || arguments[2] == "--capture-and-ocr"),
+              (arguments.count == 2 || arguments[2] == "--capture-and-ocr" || arguments[2] == "--capture-only"),
               (arguments.count < 4 || arguments[3] == "--focused-window") else {
             FileHandle.standardError.write(Data("invalid OCR probe arguments\n".utf8)); exit(2)
         }
@@ -24,8 +24,11 @@ struct OCRMain {
             let application = NSApplication.shared
             application.setActivationPolicy(.prohibited)
         }
-        let report = await WindowOCRProbe.run(app: app, requested: arguments.count >= 3,
-            source: NativeWindowSource(), selection: arguments.count == 4 ? .focused : .unique)
+        let captureRequested = arguments.count >= 3
+        let ocrRequested = captureRequested && arguments[2] == "--capture-and-ocr"
+        let report = await WindowOCRProbe.run(app: app, requested: captureRequested,
+            ocrRequested: ocrRequested, source: NativeWindowSource(),
+            selection: arguments.count == 4 ? .focused : .unique)
         let encoder = JSONEncoder()
         encoder.keyEncodingStrategy = .convertToSnakeCase
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]

@@ -10,6 +10,29 @@ import ProbeKit
 final class NativeWindowSource: WindowSource {
     private var selectedWindows: [UInt32: SCWindow] = [:]
 
+    /// WeChat 4.x exposes its AX root through com.tencent.xinWeChat while large
+    /// compositor windows can be owned by the nested WeChatAppEx application.
+    /// Accept only fixed bundle ids whose executable remains inside the unique root app bundle.
+    private func familyMembers(_ app: TargetApp, rootPid: Int32) -> [Int32: String] {
+        let roots = NSRunningApplication.runningApplications(withBundleIdentifier: app.bundleID)
+            .filter { !$0.isTerminated }
+        guard roots.count == 1, roots[0].processIdentifier == rootPid,
+              let rootURL = roots[0].bundleURL?.standardizedFileURL else { return [:] }
+        let allowed: Set<String> = switch app {
+        case .wechat: [app.bundleID, "com.tencent.flue.WeChatAppEx"]
+        case .qq: [app.bundleID]
+        }
+        let prefix = rootURL.path.hasSuffix("/") ? rootURL.path : rootURL.path + "/"
+        var family: [Int32: String] = [:]
+        for process in NSWorkspace.shared.runningApplications {
+            guard !process.isTerminated, let bundle = process.bundleIdentifier, allowed.contains(bundle),
+                  let executable = process.executableURL?.standardizedFileURL.path,
+                  executable.hasPrefix(prefix) else { continue }
+            family[process.processIdentifier] = bundle
+        }
+        return family
+    }
+
     func metadata(_ app: TargetApp) -> CaptureMetadata {
         let os = ProcessInfo.processInfo.operatingSystemVersion
         let instances = NSRunningApplication.runningApplications(withBundleIdentifier: app.bundleID).filter { !$0.isTerminated }
@@ -28,17 +51,23 @@ final class NativeWindowSource: WindowSource {
     }
 
     func windows(_ app: TargetApp, pid: Int32) async throws -> [CaptureWindow] {
-        // The SDK enumerates shareable metadata; non-target windows are discarded, never captured or reported.
-        let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
+        // Include off-screen/other-Space windows because AX can legitimately focus a window
+        // that ScreenCaptureKit marks off-screen. Unique mode still filters them out later.
+        let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: false)
         guard content.windows.count <= 4096 else { throw OCRFailure.resourceLimit }
+        let family = familyMembers(app, rootPid: pid)
+        guard family[pid] == app.bundleID else { throw OCRFailure.enumerationFailed }
         selectedWindows.removeAll()
         var result: [CaptureWindow] = []
         for window in content.windows {
-            guard let owner = window.owningApplication, owner.processID == pid,
-                  owner.bundleIdentifier == app.bundleID, window.isOnScreen, window.windowLayer == 0 else { continue }
+            guard let owner = window.owningApplication,
+                  family[owner.processID] == owner.bundleIdentifier,
+                  window.windowLayer == 0 else { continue }
             let filter = SCContentFilter(desktopIndependentWindow: window)
             let candidate = CaptureWindow(id: window.windowID, pid: pid, bundleID: app.bundleID,
-                frame: window.frame, contentSize: filter.contentRect.size, scale: Double(filter.pointPixelScale))
+                frame: window.frame, contentSize: filter.contentRect.size, scale: Double(filter.pointPixelScale),
+                onScreen: window.isOnScreen, layer: window.windowLayer,
+                ownerPid: owner.processID, ownerBundleID: owner.bundleIdentifier)
             result.append(candidate)
             selectedWindows[window.windowID] = window
         }
@@ -76,10 +105,13 @@ final class NativeWindowSource: WindowSource {
     }
 
     func capture(_ candidate: CaptureWindow, plan: ImagePlan) async throws -> CGImage {
-        guard CGPreflightScreenCaptureAccess(), let window = selectedWindows[candidate.id],
-              window.owningApplication?.processID == candidate.pid,
-              window.owningApplication?.bundleIdentifier == candidate.bundleID,
-              window.isOnScreen, window.windowLayer == 0, window.frame == candidate.frame else {
+        guard CGPreflightScreenCaptureAccess(),
+              let app = TargetApp.allCases.first(where: { $0.bundleID == candidate.bundleID }),
+              familyMembers(app, rootPid: candidate.pid)[candidate.ownerPid] == candidate.ownerBundleID,
+              let window = selectedWindows[candidate.id],
+              window.owningApplication?.processID == candidate.ownerPid,
+              window.owningApplication?.bundleIdentifier == candidate.ownerBundleID,
+              window.windowLayer == 0, window.frame == candidate.frame else {
             throw OCRFailure.invalidGeometry
         }
         let filter = SCContentFilter(desktopIndependentWindow: window)
