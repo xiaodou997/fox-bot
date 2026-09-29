@@ -1,0 +1,42 @@
+{
+  "schema_version": "foxbot.acceptance.g2b.v1",
+  "date": "2026-09-29",
+  "tested_commit": "7a4ba7bc85b1d9f905c80b6bb3bd04bab6ccfe07",
+  "source_fingerprint": "1f5f2108375476704eea6ba18ae6163ab4e06f52f5a97869ee74694bf4645b20",
+  "source_unchanged": true,
+  "local_integration_passed": true,
+  "checks": [
+    {"step": "format", "exit_code": 0, "passed": true, "executed_tests": null},
+    {"step": "clippy", "exit_code": 0, "passed": true, "executed_tests": null},
+    {"step": "rust-tests", "exit_code": 0, "passed": true, "executed_tests": 106},
+    {"step": "cipher-disabled", "exit_code": 0, "passed": true, "executed_tests": 1},
+    {"step": "build-tools", "exit_code": 0, "passed": true, "executed_tests": null},
+    {"step": "http-smoke", "exit_code": 0, "passed": true, "executed_tests": null},
+    {"step": "host-smoke", "exit_code": 0, "passed": true, "executed_tests": null},
+    {"step": "python-tests", "exit_code": 0, "passed": true, "executed_tests": 37},
+    {"step": "docs", "exit_code": 0, "passed": true, "executed_tests": null},
+    {"step": "whitespace", "exit_code": 0, "passed": true, "executed_tests": null},
+    {"step": "swift-tests", "exit_code": 0, "passed": true, "executed_tests": 51}
+  ],
+  "native_observations": {
+    "wechat": {
+      "application_version": "4.1.13",
+      "os_version": "27.0.0",
+      "selection_mode": "FOCUSED_WINDOW",
+      "status": "NO_ELIGIBLE_WINDOW",
+      "candidate_count": 2,
+      "origin_matches": 0,
+      "size_matches": 0,
+      "frame_matches": 0,
+      "capture_state": "NOT_ATTEMPTED",
+      "ocr_attempted": false,
+      "acceptance": "BLOCKED"
+    },
+    "qq": {"status": "NOT_RUNNING", "running_instances": 0, "acceptance": "NOT_RUN"}
+  },
+  "native_chat_writes": 0,
+  "external_model_requests": 0,
+  "raw_text_exported": false,
+  "images_saved": false,
+  "full_g2b_accepted": false
+}

@@ -4,6 +4,7 @@
 - 状态：截图/OCR 实现与合成回归已落地；实际微信窗口绑定未通过，QQ 未运行。不是完整 G2b 验收或真实自动回复。
 - 前置：[G2a AX 探针](G2_MACOS_PROBE.md) · [G1 集成对账](G1_INTEGRATION.md)
 - 关联：[能力矩阵](../adapters/CAPABILITY_MATRIX.md) · [总验收清单](../acceptance/ACCEPTANCE_CHECKLIST.md)
+- 实际结果：[本地验收回执](../acceptance/receipts/2026-09-29-g2b-window-ocr.md)，被测代码与后续文档提交分开记录。
 
 ## 1. 与 G2a 分离的实际实现
 
