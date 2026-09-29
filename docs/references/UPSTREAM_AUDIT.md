@@ -57,7 +57,7 @@ Android 微信禁用的原因在上游注释中由作者描述；本项目未独
 
 复用代码或实质部分时保留适用的版权和许可通知，同时检查对应目录和 NOTICE。模型权重、依赖、图像和品牌资产分别审核，不能用仓库顶层 MIT 覆盖所有外部资源。开源代码许可也不是第三方客户端对自动化使用的授权或零风险保证。
 
-本轮没有为 FoxBot 选择或替换自身 LICENSE；在实际引入代码和发布前单独确定。当前复用台账为空，设计参考不冒充已迁入的组件。
+本轮没有为 FoxBot 选择或替换自身 LICENSE；在实际引入代码和发布前单独确定。G2b-3 对 macOS 微信消息区域与几何分类阈值的算法借鉴记录在第 9 节；未直接复制上游 Python 文件。
 
 未来每次复用至少记录：
 
@@ -107,3 +107,15 @@ review_and_validation_receipt:
 | getrandom | 0.4.3（直接使用） | 操作系统随机源生成账本密钥和隔离探针名称；锁文件另有 0.2.17 的传递依赖。 |
 
 首次 SQLCipher 构建、加密读写和 macOS 随机凭据探针的实际结果记录于 G1c 回执；其他平台凭据、ACL、发布签名及完整许可证分发清单仍需发布前核对。安装了库或 API 可编译，不代表其所有平台能力已验收。FoxBot 自身 LICENSE 仍未选定，不因引用 MIT 上游或上述库自动取得统一许可证结论。
+
+## 9. G2b-3 macOS 消息布局算法借鉴（2026-09-29）
+
+G2b-3 额外核对 `jev-chat/jev-chat-jarvis-mac` 的较新固定提交 `f827bb81175bb590c7c61ba5d6142ddb5aee8a65`，仅用于微信 4.x 截图 OCR 后的布局/消息几何参考：
+
+- 上游路径：[src/perception.py](https://github.com/jev-chat/jev-chat-jarvis-mac/blob/f827bb81175bb590c7c61ba5d6142ddb5aee8a65/src/perception.py)
+- 上游许可证：MIT，版权主体仍见该仓库 LICENSE。
+- 借鉴点：聊天 pane 从约 x=0.32 开始；底部原点的正文 y 0.24～0.90 转为 FoxBot top-left 口径约 y 0.10～0.76；左右气泡以 x/right 的保守阈值分类；紧邻同侧多行和较小的群聊 sender header 可以合并/附着。
+- FoxBot 本地实现：`native/macos-probe/Sources/OCRKit/MessageParser.swift`，以 Swift 重新实现并额外强制 `HEURISTIC_REGION`、`UNKNOWN_DIRECTION` 等不确定状态；诊断 JSON 不包含正文、sender 名称或 box。
+- 未继承：上游窗口标题/owner 选择、发送逻辑、自动化风控结论、准确率声明、校准数据、完整 UI_NOISE 规则和产品支持状态。
+
+该记录表示对实质布局阈值/算法思想进行来源归档，不把 MIT 参考代码自动变成本项目 LICENSE，也不表示 FoxBot 当前 MessageSnapshot 已完成人工标注验收。

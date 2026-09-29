@@ -25,6 +25,11 @@ public struct OCRSnapshot {
     public let lines: [OCRLine]
     public let statistics: OCRStatistics
 }
+public struct OCRWarmupSummary: Encodable {
+    public let elapsedMilliseconds: Int
+    public let lineCount: Int
+    public let succeeded: Bool
+}
 public enum VisionOCR {
     public static let maxLines = 512
     public static let maxCharacters = 32768
@@ -56,7 +61,7 @@ public enum VisionOCR {
 
     /// One local request per image. No upload, image file, lexical repair, or visual language model.
     /// The supervising process supplies the hard deadline; Vision's synchronous perform is not assumed cancellable.
-    public static func recognize(_ image: CGImage) throws -> OCRSnapshot {
+    public static func recognize(_ image: CGImage, topLeftRegion: CGRect? = nil) throws -> OCRSnapshot {
         guard ImagePlan.accepts(width: image.width, height: image.height) else { throw OCRFailure.resourceLimit }
         return try autoreleasepool {
             let request = VNRecognizeTextRequest()
@@ -70,15 +75,58 @@ public enum VisionOCR {
             let supported = try request.supportedRecognitionLanguages()
             guard languages.allSatisfy({ supported.contains($0) }) else { throw OCRFailure.unsupportedLanguages }
             request.recognitionLanguages = languages
+            var visionRegion: CGRect?
+            if let region = topLeftRegion {
+                let values = [region.minX, region.minY, region.width, region.height, region.maxX, region.maxY]
+                guard values.allSatisfy({ $0.isFinite }), region.width > 0, region.height > 0,
+                      region.minX >= 0, region.minY >= 0, region.maxX <= 1, region.maxY <= 1 else {
+                    throw OCRFailure.invalidGeometry
+                }
+                let converted = CGRect(x: region.minX, y: 1 - region.maxY,
+                                       width: region.width, height: region.height)
+                request.regionOfInterest = converted
+                visionRegion = converted
+            }
             do { try VNImageRequestHandler(cgImage: image, orientation: .up, options: [:]).perform([request]) }
             catch { throw OCRFailure.recognitionFailed }
             guard let observations = request.results else { throw OCRFailure.recognitionFailed }
             let candidates = observations.prefix(maxLines).compactMap { observation -> OCRLine? in
                 guard let first = observation.topCandidates(1).first else { return nil }
-                return OCRLine(text: first.string, confidence: first.confidence, bounds: observation.boundingBox)
+                var box = observation.boundingBox
+                if let roi = visionRegion {
+                    box = CGRect(x: roi.minX + box.minX * roi.width,
+                                 y: roi.minY + box.minY * roi.height,
+                                 width: box.width * roi.width,
+                                 height: box.height * roi.height)
+                }
+                return OCRLine(text: first.string, confidence: first.confidence, bounds: box)
             }
             return bounded(candidates, overflow: observations.count > maxLines,
                            missingCandidates: candidates.count != min(observations.count, maxLines))
+        }
+    }
+
+    /// Pay Vision's model-load cost on a blank in-memory image. No chat pixels, file or network.
+    public static func warmup() -> OCRWarmupSummary {
+        let started = ProcessInfo.processInfo.systemUptime
+        guard let context = CGContext(data: nil, width: 64, height: 64, bitsPerComponent: 8,
+                                      bytesPerRow: 64 * 4, space: CGColorSpaceCreateDeviceRGB(),
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
+            return OCRWarmupSummary(elapsedMilliseconds: 0, lineCount: 0, succeeded: false)
+        }
+        context.setFillColor(CGColor(gray: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: 64, height: 64))
+        guard let image = context.makeImage() else {
+            return OCRWarmupSummary(elapsedMilliseconds: 0, lineCount: 0, succeeded: false)
+        }
+        do {
+            let snapshot = try recognize(image)
+            let elapsed = max(0, Int(((ProcessInfo.processInfo.systemUptime - started) * 1000).rounded()))
+            return OCRWarmupSummary(elapsedMilliseconds: elapsed,
+                                    lineCount: snapshot.statistics.lineCount, succeeded: true)
+        } catch {
+            let elapsed = max(0, Int(((ProcessInfo.processInfo.systemUptime - started) * 1000).rounded()))
+            return OCRWarmupSummary(elapsedMilliseconds: elapsed, lineCount: 0, succeeded: false)
         }
     }
 }

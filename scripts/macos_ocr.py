@@ -31,12 +31,14 @@ def safe_ocr_report(data: bytes, app: str, capture: bool, focused: bool = False,
                 "raw_text_included", "image_saved", "network_requests", "capture_scope", "content_scope", "selection_mode",
                 "account_identity", "conversation_identity", "send_capability", "capture_requested",
                 "ocr_requested", "screen_capture_preflight", "running_instances", "status", "capture_state", "ocr_attempted"}
-    optional = {"application_version", "eligible_windows", "window_stable", "image", "ocr", "window_matching"}
+    optional = {"application_version", "eligible_windows", "window_stable", "image", "ocr", "window_matching",
+                "message_summary"}
     if not isinstance(report, dict) or not required <= report.keys() or report.keys() - required - optional:
         raise ValueError("report fields")
     expected = {"schema_version": "foxbot.macos-ocr.v1", "app": app,
                 "bundle_id": {"wechat": "com.tencent.xinWeChat", "qq": "com.tencent.qq"}[app],
-                "capture_scope": "SINGLE_WINDOW", "content_scope": "WINDOW_NOT_CHAT",
+                "capture_scope": "SINGLE_WINDOW",
+                "content_scope": "CHAT_REGION_HEURISTIC" if app == "wechat" and capture and ocr else "WINDOW_NOT_CHAT",
                 "selection_mode": "FOCUSED_WINDOW" if focused else "UNIQUE_WINDOW",
                 "account_identity": "UNVERIFIED", "conversation_identity": "UNVERIFIED",
                 "send_capability": "NOT_IMPLEMENTED"}
@@ -147,6 +149,26 @@ def safe_ocr_report(data: bytes, app: str, capture: bool, focused: bool = False,
     expected_status = "OCR_PARTIAL_SUMMARY" if reasons else "OCR_EMPTY" if ocr["line_count"] == 0 else "OCR_SUMMARY"
     if status != expected_status:
         raise ValueError("contradictory OCR status")
+    if "message_summary" in report:
+        summary = report["message_summary"]
+        keys = {"strategy", "message_count", "me_count", "them_count", "unknown_count",
+                "sender_labeled_count", "used_line_count", "complete", "partial_reasons"}
+        allowed_reasons = {"HEURISTIC_REGION", "OCR_PARTIAL", "UNKNOWN_DIRECTION"}
+        if not isinstance(summary, dict) or set(summary) != keys:
+            raise ValueError("message summary fields")
+        counts = ("message_count", "me_count", "them_count", "unknown_count",
+                  "sender_labeled_count", "used_line_count")
+        if (summary["strategy"] != "WECHAT_HEURISTIC_V0"
+                or not all(integer(summary[key], 0, 64 if key != "used_line_count" else 512) for key in counts)
+                or summary["me_count"] + summary["them_count"] + summary["unknown_count"] != summary["message_count"]
+                or summary["sender_labeled_count"] > summary["message_count"]
+                or summary["used_line_count"] < summary["message_count"]
+                or type(summary["complete"]) is not bool
+                or not isinstance(summary["partial_reasons"], list)
+                or any(reason not in allowed_reasons for reason in summary["partial_reasons"])
+                or len(summary["partial_reasons"]) != len(set(summary["partial_reasons"]))
+                or summary["complete"] != (not summary["partial_reasons"])):
+            raise ValueError("message summary invariant")
     return report
 
 

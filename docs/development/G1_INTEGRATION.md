@@ -17,7 +17,7 @@ python3 scripts/g1_integration_check.py --with-macos-probe
 
 报告中的耗时是该次检查耗时，不是性能门槛或长稳时长。脚本只声明本地检查集合通过，不能把“检查项数量”当 Rust 测试数，也不能把合成测试视为原生兼容。
 
-测试步骤还解析实际执行数量并设置最低要求：Rust工作区至少106项、关闭加密功能的精确过滤至少1项、Python至少37项、Swift XCTest至少51项（包含 G2b-1 新增测试）。只有退出码0但没有执行证明的步骤也判失败；Swift按独立 .xctest bundle 汇总，不重复计外层套件，也不漏计第二个 bundle。最低数量随明确的测试范围变更维护，不根据失败临时降低。
+测试步骤还解析实际执行数量并设置最低要求：Rust工作区至少106项、关闭加密功能的精确过滤至少1项、Python至少44项、Swift XCTest至少67项（包含 G2b-3 worker、ROI 与 MessageSnapshot 测试）。只有退出码0但没有执行证明的步骤也判失败；Swift按独立 .xctest bundle 汇总，不重复计外层套件，也不漏计第二个 bundle。最低数量随明确的测试范围变更维护，不根据失败临时降低。
 
 ## 2. 本轮发现并修复的调度边界
 
@@ -48,6 +48,6 @@ python3 scripts/g1_integration_check.py --with-macos-probe
 
 ## 4. 下一阶段的具体边界
 
-G2a 是“可读性报告”，独立于持续宿主和 ReplyProvider；报告不是 MessageEvent，不能直接入发件箱。[G2b-1](G2_WINDOW_OCR.md) 增加单窗口截图/本地 Vision OCR，[G2b-2](G2_WINDOW_BINDING.md) 已取得微信4.1.13的真实单窗口捕获证据。真实窗口 OCR、运行中 QQ、聊天区域和会话身份仍待关闭。
+G2a 是“可读性报告”，独立于持续宿主和 ReplyProvider；报告不是 MessageEvent，不能直接入发件箱。[G2b-1](G2_WINDOW_OCR.md) 增加单窗口截图/本地 Vision OCR，[G2b-2](G2_WINDOW_BINDING.md) 解决窗口身份绑定，[G2b-3](G2_OCR_WORKER_MESSAGE_SNAPSHOT.md) 已跑通真实微信持久 worker OCR 并形成进程内 MessageSnapshot。稳定账号/会话、人工标注准确率、运行中 QQ 与 Observation 桥接仍待关闭。
 
 只有得到真实账号/会话、消息顺序/方向、草稿和目标新鲜度证据后，才设计映射到核心 Observation 的桥接。最终真实发送仍必须单独进入 G3 专用测试会话验收；G1管理与存储缺口在允许持久化真实消息前关闭。

@@ -46,6 +46,21 @@ final class OCRTests: XCTestCase {
         XCTAssertEqual(result.statistics.lineCount, 0)
         XCTAssertTrue(result.lines.isEmpty)
     }
+    func testActualVisionRegionOfInterestExcludesOtherHalfAndMapsBoundsToFullWindow() throws {
+        let image = imageFixture()
+        let left = try VisionOCR.recognize(image, topLeftRegion: CGRect(x: 0, y: 0, width: 0.5, height: 1))
+        XCTAssertGreaterThan(left.lines.count, 0)
+        XCTAssertTrue(left.lines.allSatisfy { $0.bounds.maxX <= 0.500_001 })
+        let right = try VisionOCR.recognize(image, topLeftRegion: CGRect(x: 0.6, y: 0, width: 0.4, height: 1))
+        XCTAssertEqual(right.lines.count, 0)
+    }
+    func testInvalidVisionRegionIsRejectedBeforeRecognition() {
+        for region in [CGRect(x: -0.1, y: 0, width: 1, height: 1),
+                       CGRect(x: 0, y: 0, width: 1.1, height: 1),
+                       CGRect(x: 0, y: 0, width: 0, height: 1)] {
+            XCTAssertThrowsError(try VisionOCR.recognize(imageFixture(text: false), topLeftRegion: region))
+        }
+    }
     func testRetinaSizingIsBoundedWithoutUnrequestedUpscaling() throws {
         let plan = try ImagePlan.make(size: CGSize(width: 1000, height: 600), scale: 2)
         XCTAssertEqual(plan.width, 2000); XCTAssertEqual(plan.height, 1200); XCTAssertFalse(plan.downscaled)

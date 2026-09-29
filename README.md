@@ -2,7 +2,7 @@
 
 面向微信、QQ、飞书和 X 私信的跨平台消息自动化客户端。
 
-**当前状态：G2b-2 窗口身份绑定已落地，保留 G1 集成、G2a AX 探针和 G2b-1 本地 Vision OCR。** 微信 4.1.13 已取得一次真实单窗口内存捕获证据；图片未保存、正文未输出，真实窗口 OCR 仍受一次性 Vision 冷启动影响而未验收。QQ 当前未运行。完整消息适配器、真实发送、桌面界面和 APK 尚未实现。
+**当前状态：G2b-3 持久 Vision OCR worker 与只读 MessageSnapshot 已落地，保留 G1 集成、G2a、G2b-1/2。** 微信 4.1.13 已在同一预热 worker 中连续完成真实单窗口 OCR；脱敏统计稳定得到 10 条候选消息（3 我方 / 7 对方 / 0 未知方向），正文、发言人姓名和截图均未输出或保存。当前解析仍标记为 HEURISTIC_REGION，会话身份未验证；QQ 当前未运行。真实发送、桌面界面和 APK 尚未实现。
 
 ## 产品边界
 
@@ -78,6 +78,17 @@ python3 scripts/macos_ocr.py --app wechat --capture-only --focused-window
 ~~~
 
 微信 4.x 的 AX 根进程与实际大窗口 compositor 进程不同，而且主窗口可能不在 onScreen-only 列表中。G2b-2 只接受固定应用家族、安装包内子进程和 AX 几何唯一匹配；不靠标题、最大窗口或 PID 猜测。真实微信 4.1.13 已取得一次 CAPTURE_SUMMARY，图片只在内存中出现。实现与边界见 [G2b-2说明](docs/development/G2_WINDOW_BINDING.md)。
+
+## G2b-3 持久 OCR worker 与只读消息快照
+
+~~~bash
+python3 scripts/macos_ocr_worker.py \
+  --app wechat \
+  --focused-window \
+  --repeat 2
+~~~
+
+worker 在独立进程内先用 64×64 空白图预热 Apple Vision，再复用同一进程处理真实窗口。微信 OCR 只请求启发式聊天 ROI，不再识别整个侧栏与输入区；真实测试从约 85 行整窗 OCR 降到 19 行区域 OCR，两次请求约 1.06s / 0.83s。原始 OCR 文字和 sender 仅存在进程内存，命令行只输出 MessageSnapshot 计数与不确定性。详情见 [G2b-3说明](docs/development/G2_OCR_WORKER_MESSAGE_SNAPSHOT.md)。
 
 ## 文档入口
 

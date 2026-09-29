@@ -10,7 +10,7 @@ def report():
     return {"schema_version": "foxbot.macos-ocr.v1", "app": "wechat", "bundle_id": "com.tencent.xinWeChat",
             "os_version": "27.0.0", "snapshot_id": "00000000-0000-4000-8000-000000000001",
             "read_only": True, "raw_text_included": False, "image_saved": False, "network_requests": 0,
-            "capture_scope": "SINGLE_WINDOW", "content_scope": "WINDOW_NOT_CHAT", "selection_mode": "UNIQUE_WINDOW",
+            "capture_scope": "SINGLE_WINDOW", "content_scope": "CHAT_REGION_HEURISTIC", "selection_mode": "UNIQUE_WINDOW",
             "account_identity": "UNVERIFIED", "conversation_identity": "UNVERIFIED", "send_capability": "NOT_IMPLEMENTED",
             "capture_requested": True, "ocr_requested": True, "screen_capture_preflight": True, "running_instances": 1,
             "eligible_windows": 1, "status": "OCR_SUMMARY", "capture_state": "IMAGE_OBTAINED", "ocr_attempted": True,
@@ -29,6 +29,18 @@ class WindowOCRSchemaTests(unittest.TestCase):
         self.verify(empty)
         partial = report(); partial["ocr"].update(complete_recognition=False, partial_reasons=["LINE_LIMIT"])
         partial["status"] = "OCR_PARTIAL_SUMMARY"; self.verify(partial)
+
+    def test_message_summary_is_redacted_and_internally_consistent(self):
+        item = report()
+        item["message_summary"] = {
+            "strategy": "WECHAT_HEURISTIC_V0",
+            "message_count": 3, "me_count": 1, "them_count": 1, "unknown_count": 1,
+            "sender_labeled_count": 1, "used_line_count": 4,
+            "complete": False, "partial_reasons": ["HEURISTIC_REGION", "UNKNOWN_DIRECTION"]
+        }
+        self.verify(item)
+        item["message_summary"]["me_count"] = 2
+        with self.assertRaises(ValueError): self.verify(item)
 
     def test_raw_text_cannot_be_added_to_report_or_nested_results(self):
         for location in (None, "image", "ocr"):
@@ -52,7 +64,7 @@ class WindowOCRSchemaTests(unittest.TestCase):
         item = report()
         for key in ("eligible_windows", "window_stable", "image", "ocr"): item.pop(key)
         item.update(status="METADATA_ONLY", capture_requested=False, ocr_requested=False,
-                    capture_state="NOT_ATTEMPTED", ocr_attempted=False)
+                    capture_state="NOT_ATTEMPTED", ocr_attempted=False, content_scope="WINDOW_NOT_CHAT")
         safe_ocr_report(json.dumps(item).encode(), "wechat", False, ocr=False)
         item["capture_state"] = "IMAGE_OBTAINED"
         with self.assertRaises(ValueError): safe_ocr_report(json.dumps(item).encode(), "wechat", False)
@@ -91,7 +103,8 @@ class WindowOCRSchemaTests(unittest.TestCase):
     def test_capture_only_has_image_evidence_without_ocr(self):
         item = report()
         item.pop("ocr")
-        item.update(status="CAPTURE_SUMMARY", ocr_requested=False, ocr_attempted=False)
+        item.update(status="CAPTURE_SUMMARY", ocr_requested=False, ocr_attempted=False,
+                    content_scope="WINDOW_NOT_CHAT")
         safe_ocr_report(json.dumps(item).encode(), "wechat", True, False, False)
         item["ocr_attempted"] = True
         with self.assertRaises(ValueError):

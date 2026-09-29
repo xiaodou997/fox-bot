@@ -3,7 +3,7 @@
 - 文档编号：FB-BASELINE-001
 - 日期：2026-09-28
 - 性质：实现前设计基线，不是产品 v0.1 发布或功能冻结声明。
-- 当前实现：G1a～G1c 与 G2a 之上已加入[G2b-1 单窗口与本地 OCR](../development/G2_WINDOW_OCR.md)和[G2b-2 窗口身份绑定](../development/G2_WINDOW_BINDING.md)。微信 4.1.13 已取得真实单窗口内存捕获证据，但真实窗口 OCR、消息适配与发送仍未验收。完整 G1 门禁见[集成对账](../development/G1_INTEGRATION.md)。
+- 当前实现：G1a～G1c 与 G2a 之上已加入[G2b-1 单窗口与本地 OCR](../development/G2_WINDOW_OCR.md)、[G2b-2 窗口身份绑定](../development/G2_WINDOW_BINDING.md)和[G2b-3 OCR worker / MessageSnapshot](../development/G2_OCR_WORKER_MESSAGE_SNAPSHOT.md)。微信 4.1.13 已完成真实预热 worker OCR；消息方向/发送者解析仍为启发式，会话身份与真实发送未验收。完整 G1 门禁见[集成对账](../development/G1_INTEGRATION.md)。
 - 关联：[文档导航](../README.md) · [适配矩阵](../adapters/CAPABILITY_MATRIX.md) · [验收清单](../acceptance/ACCEPTANCE_CHECKLIST.md) · [来源审计](../references/UPSTREAM_AUDIT.md)
 
 ## 1. 已确定的目标与约束

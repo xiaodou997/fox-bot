@@ -42,7 +42,7 @@ public struct WindowOCRReport: Encodable {
     public let imageSaved = false
     public let networkRequests = 0
     public let captureScope = "SINGLE_WINDOW"
-    public let contentScope = "WINDOW_NOT_CHAT"
+    public var contentScope = "WINDOW_NOT_CHAT"
     public let accountIdentity = "UNVERIFIED"
     public let conversationIdentity = "UNVERIFIED"
     public let sendCapability = "NOT_IMPLEMENTED"
@@ -65,6 +65,7 @@ public struct WindowOCRReport: Encodable {
     public var windowStable: Bool?
     public var image: CapturedImageSummary?
     public var ocr: OCRStatistics?
+    public var messageSummary: MessageSnapshotSummary?
 }
 
 public func captureGate(instances: Int, requested: Bool, permission: Bool) -> String {
@@ -79,7 +80,7 @@ public enum WindowOCRProbe {
     /// No retries and no whole-display fallback. Unknown identity never becomes a send target.
     public static func run(app: TargetApp, requested: Bool, ocrRequested: Bool = true, source: WindowSource,
                            selection: WindowSelectionMode = .unique,
-                           recognize: (CGImage) throws -> OCRSnapshot = VisionOCR.recognize,
+                           recognize: ((CGImage) throws -> OCRSnapshot)? = nil,
                            now: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) async -> WindowOCRReport {
         let started = now()
         let metadata = source.metadata(app)
@@ -134,8 +135,17 @@ public enum WindowOCRProbe {
             return report
         }
         report.ocrAttempted = true
+        if app == .wechat { report.contentScope = "CHAT_REGION_HEURISTIC" }
         let snapshot: OCRSnapshot
-        do { snapshot = try recognize(image) }
+        do {
+            if let recognize {
+                snapshot = try recognize(image)
+            } else if app == .wechat {
+                snapshot = try VisionOCR.recognize(image, topLeftRegion: WeChatMessageParser.chatRegion)
+            } else {
+                snapshot = try VisionOCR.recognize(image)
+            }
+        }
         catch OCRFailure.unsupportedLanguages { report.status = "LANGUAGE_UNAVAILABLE"; return report }
         catch { report.status = "OCR_FAILED"; return report }
         guard now() - started < 10 else { report.status = "TIME_BUDGET_EXCEEDED"; return report }
@@ -145,6 +155,9 @@ public enum WindowOCRProbe {
         guard now() - started < 10 else { report.status = "TIME_BUDGET_EXCEEDED"; return report }
         report.windowStable = true
         report.ocr = snapshot.statistics // NEVER serialize snapshot.lines.
+        if app == .wechat {
+            report.messageSummary = WeChatMessageParser.parse(snapshot).summary
+        }
         report.status = !snapshot.statistics.completeRecognition ? "OCR_PARTIAL_SUMMARY"
             : (snapshot.lines.isEmpty ? "OCR_EMPTY" : "OCR_SUMMARY")
         return report

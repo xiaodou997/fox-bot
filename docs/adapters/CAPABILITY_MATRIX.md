@@ -165,3 +165,15 @@ known_gaps:
 | MC-QQ | NOT RUN | QQ仍未运行 | 结构化读取、窗口家族、截图均待测 |
 
 [G2b-2说明](../development/G2_WINDOW_BINDING.md)记录根因和约束。此处的 LOCAL PASS 仅指一次真实单窗口图像取得，不提升 MC-WX 整体适配状态，也不证明聊天正文、发言人或发送能力。
+
+### G2b-3 持久 OCR / MessageSnapshot（不是应用 ACCEPTED）
+
+| 对象 | 实现 | 本轮环境观察 | 未覆盖 |
+| --- | --- | --- | --- |
+| Vision 持久 worker | IMPLEMENTED / LOCAL PASS | JSONL 子进程显式 warmup；请求超时由父进程 kill+wait；同一 worker 连续两次真实 OCR 成功 | 尚未接 Rust host 生命周期；冷启动仍可能约 32.8s |
+| 微信聊天 ROI | IMPLEMENTED / LOCAL PASS | 只对 top-left 归一化 x≥0.32、y 0.10～0.76 的启发式聊天区跑 Vision；真实 OCR 行数约 85→19 | 输入区高度/主题/窗口布局仍未动态校准 |
+| MC-WX 真实 OCR | IMPLEMENTED / LOCAL PASS | 微信4.1.13、macOS27/arm64；连续两次 OCR_SUMMARY，请求约1061ms/829ms；不保存图像/正文 | 未测macOS26、多显示器/Space/最小化；未做标注准确率 |
+| MessageSnapshot | IMPLEMENTED / HEURISTIC | 实际脱敏 summary 两次均为10条：3 ME / 7 THEM / 0 UNKNOWN，sender_labeled=6 | 只证明启发式输出稳定，不证明10条均为真实聊天气泡；conversation仍UNVERIFIED |
+| MC-QQ | NOT RUN | QQ仍未运行 | 运行中AX、OCR或专属 MessageSnapshot 未验收 |
+
+[G2b-3说明](../development/G2_OCR_WORKER_MESSAGE_SNAPSHOT.md)记录协议、ROI 和真实性能证据。HEURISTIC_REGION 会强制 summary.complete=false，因此这些结果不能直接成为自动发送授权。

@@ -8,8 +8,12 @@ struct OCRMain {
     @MainActor
     static func main() async {
         let arguments = Array(CommandLine.arguments.dropFirst())
+        if arguments == ["--worker"] {
+            await WorkerMode.run()
+            return
+        }
         if arguments.isEmpty || arguments == ["--help"] {
-            print("foxbot-macos-ocr --app <qq|wechat> [--capture-only|--capture-and-ocr] [--focused-window]\nNo screenshot by default. Explicit capture uses one unambiguous target window; only redacted statistics are printed.")
+            print("foxbot-macos-ocr --worker | --app <qq|wechat> [--capture-only|--capture-and-ocr] [--focused-window]\nNo screenshot by default. Explicit capture uses one unambiguous target window; only redacted statistics are printed.")
             return
         }
         guard (2...4).contains(arguments.count), arguments[0] == "--app",
