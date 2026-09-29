@@ -17,7 +17,7 @@ python3 scripts/g1_integration_check.py --with-macos-probe
 
 报告中的耗时是该次检查耗时，不是性能门槛或长稳时长。脚本只声明本地检查集合通过，不能把“检查项数量”当 Rust 测试数，也不能把合成测试视为原生兼容。
 
-测试步骤还解析实际执行数量并设置最低要求：Rust工作区至少121项、关闭加密功能的精确过滤至少1项、Python至少49项、Swift XCTest至少71项（包含 G2d Runtime bridge 与 G2c 身份/worker/ground-truth 测试）。只有退出码0但没有执行证明的步骤也判失败；Swift按独立 .xctest bundle 汇总，不重复计外层套件，也不漏计第二个 bundle。最低数量随明确的测试范围变更维护，不根据失败临时降低。
+测试步骤还解析实际执行数量并设置最低要求：Rust工作区至少126项、关闭加密功能的精确过滤至少1项、Python至少51项、Swift XCTest至少71项（包含 G2d Runtime bridge、真实验收 workflow 与 G2c 身份/worker/ground-truth 测试）。只有退出码0但没有执行证明的步骤也判失败；Swift按独立 .xctest bundle 汇总，不重复计外层套件，也不漏计第二个 bundle。最低数量随明确的测试范围变更维护，不根据失败临时降低。
 
 ## 2. 本轮发现并修复的调度边界
 
@@ -51,5 +51,7 @@ python3 scripts/g1_integration_check.py --with-macos-probe
 G2a/G2b 仍是只读感知；[G2c](G2C_IDENTITY_HOST.md) 已增加显式会话 Binding、应用运行会话失效、跨帧连续性、ground-truth 门禁和 Rust worker 生命周期。真实微信 host 探针仍固定报告 PROVISIONAL，因为没有真实标注接受记录和配置 Binding。运行中 QQ、真实 Observation 联调和账号应用内重登录自动探测仍待关闭。
 
 [G2d](G2D_OBSERVATION_BRIDGE.md) 新增 `g2d-bridge-smoke`：在无网络、无模型、无原生聊天操作下验证 PrivateMessageSnapshot → Observation → Runtime::ingest。真实微信 ground-truth 未建立，因此这条 smoke 不能替代真实 G2d 验收。
+
+[G2d 真实验收工作流](G2D_REAL_ACCEPTANCE.md)已把真实正文限制在 `target/g2d-real/`，人工 expected 不自动生成；未 accepted ground-truth 时 baseline 在启动 worker 前 fail-closed。固定提交 readiness 已证明真实微信可以稳定私有采样，但不因此提升真实 Observation 状态。
 
 只有得到真实账号/会话、消息顺序/方向、草稿和目标新鲜度证据后，才设计映射到核心 Observation 的桥接。最终真实发送仍必须单独进入 G3 专用测试会话验收；G1管理与存储缺口在允许持久化真实消息前关闭。

@@ -202,3 +202,15 @@ known_gaps:
 | MC-WX 真实 Observation | BLOCKED | 后续真实读取出现 TARGET_CHANGED / NO_ELIGIBLE_WINDOW，并且缺真实 GT/Binding | 专用测试会话人工验收 |
 
 [G2d说明](../development/G2D_OBSERVATION_BRIDGE.md)和[回执](../acceptance/receipts/2026-09-29-g2d-observation-bridge.md)记录固定提交证据。G2d 没有调用 AI，也没有增加聊天写入/发送能力。
+
+### G2d 真实验收 Harness
+
+| 对象 | 实现 | 本轮状态 | 未覆盖 |
+| --- | --- | --- | --- |
+| 私有 case 采样 | IMPLEMENTED / LOCAL PASS | 连续两读稳定才写 `target/g2d-real/<session>`；observed 写入、expected 默认空；公开输出无正文 | 仍需专用测试会话采 6 类真实 case |
+| Ground-truth evaluator | IMPLEMENTED / PASS | acceptance 文件 0600；6 case / 24 条合成数据可通过；readiness expected 为空时 accepted=false | 真实 expected 尚未人工填写 |
+| Baseline preflight | IMPLEMENTED / PASS | accepted=false 时在启动 OCR worker 前返回 Untrusted | 真实 accepted GT 尚不存在 |
+| Real verify Runtime | IMPLEMENTED / SYNTHETIC PASS | 随机 SQLCipher key、临时 Runtime、单条 incoming queued=1、重读 NO_CHANGE、key zeroize、目录删除 | 真实 incoming 尚未执行 |
+| MC-WX readiness | LOCAL PASS | 固定提交真实微信两读稳定，9 条 observed，私有文件权限 0600 | readiness tag 不计 ground-truth；真实 Observation 仍 BLOCKED |
+
+[真实验收工作流](../development/G2D_REAL_ACCEPTANCE.md)与[readiness 回执](../acceptance/receipts/2026-09-29-g2d-real-readiness.md)记录完整步骤。只有人工 ground-truth + 显式 Binding + 一条已知外部 incoming 的 real verify PASS 后，G2 真实读取链才可进入 Freeze 候选。

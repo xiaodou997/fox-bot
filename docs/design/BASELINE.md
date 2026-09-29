@@ -3,7 +3,7 @@
 - 文档编号：FB-BASELINE-001
 - 日期：2026-09-28
 - 性质：实现前设计基线，不是产品 v0.1 发布或功能冻结声明。
-- 当前实现：G1a～G1c、G2a/G2b/G2c 之上已加入[G2d Observation Bridge](../development/G2D_OBSERVATION_BRIDGE.md)。合成可信快照已实际进入 Runtime::ingest，并验证 baseline/new/no-change、歧义零写入和背压幂等恢复；真实微信没有 accepted ground-truth 与显式 Binding，因此真实 Observation ingest 仍 BLOCKED。真实发送未验收。
+- 当前实现：G1a～G1c、G2a/G2b/G2c 之上已加入[G2d Observation Bridge](../development/G2D_OBSERVATION_BRIDGE.md)与[真实验收工作流](../development/G2D_REAL_ACCEPTANCE.md)。合成可信快照已实际进入 Runtime::ingest；真实微信固定提交 readiness 也能稳定私有采样，但 expected 不自动生成、acceptance 仍为 false，因此真实 Observation ingest 继续 BLOCKED。真实发送未验收。
 - 关联：[文档导航](../README.md) · [适配矩阵](../adapters/CAPABILITY_MATRIX.md) · [验收清单](../acceptance/ACCEPTANCE_CHECKLIST.md) · [来源审计](../references/UPSTREAM_AUDIT.md)
 
 ## 1. 已确定的目标与约束

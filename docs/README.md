@@ -2,7 +2,7 @@
 
 当前文档基线：**v0.1 / 2026-09-28**。这是设计阶段的版本，不是应用发布版本。
 
-G2d 已完成实现与合成 Runtime Bridge 验收：可信 PrivateMessageSnapshot 可经过身份/ground-truth 门禁进入 Runtime::ingest；真实微信没有 accepted ground-truth 与显式 Binding，且本轮后续窗口发生 TARGET_CHANGED，因此真实 Observation 仍为 BLOCKED。QQ 未运行，没有真实模型联调、真实发送、安装包或长稳结论。
+G2d 真实验收工具链已就绪：可信 PrivateMessageSnapshot 可经过身份/ground-truth 门禁进入 Runtime::ingest，真实微信 readiness 也能稳定私有采样；但没有人工 ground-truth 时 acceptance=false 且 baseline 在启动 worker 前拒绝，因此真实 Observation 仍为 BLOCKED。QQ 未运行，没有真实模型联调、真实发送、安装包或长稳结论。
 
 ## 1. 三份主文档
 
@@ -38,6 +38,8 @@ G2d 已完成实现与合成 Runtime Bridge 验收：可信 PrivateMessageSnapsh
 | [G2c 验收回执](acceptance/receipts/2026-09-29-g2c-identity-host.md) | 固定代码提交、真实微信两帧身份稳定、Rust host 生命周期与 PROVISIONAL 边界 |
 | [G2d Observation Bridge](development/G2D_OBSERVATION_BRIDGE.md) | PrivateMessageSnapshot → Runtime::ingest、两阶段游标提交、背压重试和真实验收边界 |
 | [G2d 验收回执](acceptance/receipts/2026-09-29-g2d-observation-bridge.md) | 固定代码提交、合成 Runtime Bridge PASS 与真实微信 BLOCKED 边界 |
+| [G2d 真实验收工作流](development/G2D_REAL_ACCEPTANCE.md) | 私有采样、人工 ground-truth、显式 Binding、baseline 和单条 incoming 验证 |
+| [G2d Readiness 回执](acceptance/receipts/2026-09-29-g2d-real-readiness.md) | 固定提交的真实私有采样、0600 权限、自我验收防护与 BLOCKED 边界 |
 
 已执行的检查或测试回执保存到 `docs/acceptance/receipts/`，清单本身不作为累计通过报告。新增回执时使用稳定文件名，标记实际被检提交；文档回执的提交与被测程序提交可以不同，不能混写。
 
@@ -68,6 +70,6 @@ G2d 已完成实现与合成 Runtime Bridge 验收：可信 PrivateMessageSnapsh
 
 ## 6. 当前阶段和下一项
 
-G2d 的代码和合成验收已具备，**真实 G2d 仍需人工参与**：建立专用测试会话 ground-truth + 显式 Binding，然后从另一测试账号发送一条已知消息，验证真实 MessageSnapshot → Observation → Runtime::ingest；完成前不进入 G3 发送。
+G2d 的代码和真实验收 harness 都已具备，**剩余依赖是人工事实**：专用测试会话完成 6 类 ground-truth、acceptance 通过、baseline 后从另一测试账号发送一条已知 incoming，再执行 real verify。完成前不进入 G3 发送。
 
 目标应用版本与定制服务脱敏样例可在联调时补充，不阻塞模拟开发；未取得对应证据之前，不承诺真实客户端兼容性。根目录 scripts/check_docs.py 可直接检查本地 Markdown 文件目标、JSON 示例和案例引用，不联网检查外部链接。

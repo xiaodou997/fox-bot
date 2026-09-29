@@ -1,0 +1,47 @@
+{
+  "schema_version": "foxbot.acceptance.g2d-real-readiness.v1",
+  "code_commit": "1c079300ea5e279279b66198d948bf1e2b43d50f",
+  "integration": {
+    "passed": true,
+    "source_sha256": "cc499655a4e7d66c19b9010167c529a4d53c98d5116b267d8ee19df65145f514",
+    "rust_tests": 126,
+    "cipher_disabled_tests": 1,
+    "python_tests": 51,
+    "swift_tests": 71,
+    "source_unchanged": true
+  },
+  "synthetic_ground_truth": {
+    "accepted": true,
+    "cases": 6,
+    "labeled_messages": 24,
+    "errors": {
+      "direction": 0,
+      "sender": 0,
+      "message_count": 0,
+      "text": 0
+    }
+  },
+  "real_readiness": {
+    "status": "PRIVATE_CASE_CAPTURED",
+    "session": "fixed-readiness-20260929",
+    "tag": "readiness",
+    "observed_messages": 9,
+    "stable_two_reads": true,
+    "raw_text_included": false,
+    "private_files_mode_ok": true,
+    "acceptance": false,
+    "baseline_blocked_before_worker": true
+  },
+  "real_observation": {
+    "status": "BLOCKED",
+    "reasons": [
+      "REAL_GROUND_TRUTH_NOT_ANNOTATED",
+      "REAL_ACCEPTANCE_NOT_ACCEPTED",
+      "BASELINE_NOT_CREATED",
+      "KNOWN_EXTERNAL_INCOMING_NOT_SENT"
+    ]
+  },
+  "external_model_requests": 0,
+  "native_chat_operations": 0,
+  "write_or_send_operations": 0
+}
