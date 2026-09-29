@@ -1,0 +1,51 @@
+{
+  "schema_version": "foxbot.acceptance.g2b2.v1",
+  "code_commit": "24af466aedf94d4e365a1b39741bb1b4d2b633b9",
+  "environment": {
+    "os": "macOS 27.0",
+    "arch": "arm64",
+    "wechat": "4.1.13"
+  },
+  "integration": {
+    "passed": true,
+    "source_sha256": "d921db6b0320c09d2c93cba5ca9a589c60df7550c8308faec59acc68a72fa962",
+    "rust_tests": 106,
+    "cipher_disabled_tests": 1,
+    "python_tests": 38,
+    "swift_tests": 55,
+    "source_unchanged": true
+  },
+  "real_capture": {
+    "status": "CAPTURE_SUMMARY",
+    "selection_mode": "FOCUSED_WINDOW",
+    "candidate_count": 26,
+    "origin_matches": 2,
+    "size_matches": 2,
+    "frame_matches": 1,
+    "eligible_windows": 1,
+    "capture_state": "IMAGE_OBTAINED",
+    "image": {
+      "width": 3574,
+      "height": 2280,
+      "downscaled": false
+    },
+    "window_stable": true,
+    "image_saved": false,
+    "raw_text_included": false,
+    "ocr_requested": false,
+    "ocr_attempted": false,
+    "conversation_identity": "UNVERIFIED"
+  },
+  "real_ocr": {
+    "status": "TIMEOUT",
+    "timeout_seconds": 15,
+    "capture_state": "UNKNOWN",
+    "ocr_state": "UNKNOWN",
+    "accepted": false
+  },
+  "qq": {
+    "status": "NOT_RUNNING"
+  },
+  "external_model_requests": 0,
+  "write_or_send_operations": 0
+}

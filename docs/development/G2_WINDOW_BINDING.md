@@ -4,6 +4,7 @@
 - 状态：微信 4.1.13 的当前多进程窗口绑定已实现，并取得一次真实单窗口内存捕获证据；真实窗口 OCR、聊天解析和发送仍未验收。
 - 前置：[G2b-1 单窗口 OCR](G2_WINDOW_OCR.md) · [G2a AX 探针](G2_MACOS_PROBE.md)
 - 关联：[能力矩阵](../adapters/CAPABILITY_MATRIX.md) · [验收清单](../acceptance/ACCEPTANCE_CHECKLIST.md)
+- 实际结果：[G2b-2 本地验收回执](../acceptance/receipts/2026-09-29-g2b2-window-binding.md)
 
 ## 1. G2b-1 为什么匹配失败
 
