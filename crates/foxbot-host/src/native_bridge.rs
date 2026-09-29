@@ -1,6 +1,7 @@
 use crate::{HostError, Result};
 use foxbot_core::{
-    Binding, ContentKind, ConversationKind, Direction, Mention, Message, Observation, Source,
+    Binding, ContentKind, ConversationKind, Direction, IngestOutcome, Mention, Message,
+    Observation, Runtime, Source,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -144,10 +145,22 @@ pub enum BridgeOutcome {
     Ambiguous,
 }
 
+#[derive(Clone)]
 pub struct NativeObservationBridge {
     conversations: HashMap<String, NativeConversationBinding>,
     acceptance: GroundTruthAcceptance,
     tracks: HashMap<String, TrackState>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+pub struct RuntimeBridgeReport {
+    pub bridge_state: String,
+    pub observations: usize,
+    pub baselined: usize,
+    pub queued: usize,
+    pub ignored: usize,
+    pub duplicates: usize,
+    pub ambiguous: usize,
 }
 impl NativeObservationBridge {
     pub fn from_config(config: NativeBridgeConfig) -> Result<Self> {
@@ -287,6 +300,63 @@ impl NativeObservationBridge {
         }
     }
 
+    /// Bridge into Runtime without advancing the cross-frame cursor until every
+    /// generated Observation has been accepted. Runtime may have durably ingested
+    /// a prefix before a later error; retrying reuses the same canonical IDs so
+    /// that prefix is observed as Duplicate instead of being emitted twice.
+    pub fn ingest_into_runtime(
+        &mut self,
+        runtime: &mut Runtime,
+        snapshot: &PrivateMessageSnapshot,
+        observed_ms: u64,
+    ) -> Result<RuntimeBridgeReport> {
+        let mut candidate = self.clone();
+        let outcome = candidate.bridge(snapshot, observed_ms)?;
+        let mut report = RuntimeBridgeReport::default();
+        let observations = match outcome {
+            BridgeOutcome::Baseline(values) => {
+                report.bridge_state = "BASELINE".into();
+                values
+            }
+            BridgeOutcome::New(values) => {
+                report.bridge_state = "NEW".into();
+                values
+            }
+            BridgeOutcome::NoChange => {
+                report.bridge_state = "NO_CHANGE".into();
+                *self = candidate;
+                return Ok(report);
+            }
+            BridgeOutcome::Provisional => {
+                report.bridge_state = "PROVISIONAL".into();
+                *self = candidate;
+                return Ok(report);
+            }
+            BridgeOutcome::Ambiguous => {
+                report.bridge_state = "AMBIGUOUS".into();
+                *self = candidate;
+                return Ok(report);
+            }
+        };
+        report.observations = observations.len();
+        for observation in &observations {
+            let outcome = runtime.ingest(observation).map_err(|error| match error {
+                foxbot_core::Error::Backpressure => HostError::Backpressure,
+                foxbot_core::Error::Stale => HostError::Untrusted,
+                _ => HostError::Storage,
+            })?;
+            match outcome {
+                IngestOutcome::Baseline => report.baselined += 1,
+                IngestOutcome::Queued => report.queued += 1,
+                IngestOutcome::Ignored => report.ignored += 1,
+                IngestOutcome::Duplicate => report.duplicates += 1,
+                IngestOutcome::Ambiguous => report.ambiguous += 1,
+            }
+        }
+        *self = candidate;
+        Ok(report)
+    }
+
     /// Account/login changes, app replacement or an operator rebind must drop the
     /// old cross-frame tracker. The next accepted snapshot becomes a fresh baseline.
     pub fn invalidate(&mut self, conversation_fingerprint: &str) {
@@ -391,6 +461,21 @@ fn is_hex64(value: &str) -> bool {
 mod tests {
     use super::*;
     use foxbot_core::{Mode, ProviderProfile, simulation::fixture_key};
+    use tempfile::TempDir;
+
+    fn runtime(binding: &Binding) -> (TempDir, Runtime) {
+        let directory = tempfile::tempdir().unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(directory.path(), std::fs::Permissions::from_mode(0o700))
+                .unwrap();
+        }
+        let mut runtime = Runtime::open_simulation(directory.path()).unwrap();
+        runtime.bind(binding).unwrap();
+        runtime.set_host_paused(false).unwrap();
+        (directory, runtime)
+    }
 
     fn acceptance() -> GroundTruthAcceptance {
         GroundTruthAcceptance {
@@ -664,5 +749,126 @@ mod tests {
                 .unwrap(),
             BridgeOutcome::Provisional
         ));
+    }
+
+    #[test]
+    fn runtime_bridge_baselines_then_queues_only_trusted_new_incoming() {
+        let configured = entry(ConversationKind::Private);
+        let binding = configured.binding.clone();
+        let (_dir, mut runtime) = runtime(&binding);
+        let mut bridge = NativeObservationBridge::new(vec![configured], acceptance()).unwrap();
+
+        let first = snapshot(vec![
+            msg("A", PrivateDirection::Them),
+            msg("B", PrivateDirection::Me),
+            msg("C", PrivateDirection::Them),
+        ]);
+        let report = bridge
+            .ingest_into_runtime(&mut runtime, &first, 10)
+            .unwrap();
+        assert_eq!(report.bridge_state, "BASELINE");
+        assert_eq!(report.observations, 3);
+        assert_eq!(report.baselined, 3);
+        assert_eq!(runtime.host_counts().unwrap().0, 3);
+
+        let second = snapshot(vec![
+            msg("B", PrivateDirection::Me),
+            msg("C", PrivateDirection::Them),
+            msg("D", PrivateDirection::Them),
+        ]);
+        let report = bridge
+            .ingest_into_runtime(&mut runtime, &second, 20)
+            .unwrap();
+        assert_eq!(report.bridge_state, "NEW");
+        assert_eq!(report.observations, 1);
+        assert_eq!(report.queued, 1);
+        assert_eq!(runtime.host_counts().unwrap().0, 4);
+
+        let report = bridge
+            .ingest_into_runtime(&mut runtime, &second, 30)
+            .unwrap();
+        assert_eq!(report.bridge_state, "NO_CHANGE");
+        assert_eq!(report.observations, 0);
+        assert_eq!(runtime.host_counts().unwrap().0, 4);
+    }
+
+    #[test]
+    fn provisional_and_ambiguous_snapshots_do_not_touch_runtime() {
+        let configured = entry(ConversationKind::Private);
+        let binding = configured.binding.clone();
+        let (_dir, mut runtime) = runtime(&binding);
+        let mut bridge = NativeObservationBridge::new(vec![configured], acceptance()).unwrap();
+
+        let provisional = snapshot(vec![msg("center", PrivateDirection::Unknown)]);
+        let report = bridge
+            .ingest_into_runtime(&mut runtime, &provisional, 1)
+            .unwrap();
+        assert_eq!(report.bridge_state, "PROVISIONAL");
+        assert_eq!(runtime.host_counts().unwrap().0, 0);
+
+        let baseline = snapshot(vec![
+            msg("A", PrivateDirection::Me),
+            msg("B", PrivateDirection::Them),
+        ]);
+        bridge
+            .ingest_into_runtime(&mut runtime, &baseline, 2)
+            .unwrap();
+        assert_eq!(runtime.host_counts().unwrap().0, 2);
+
+        let unrelated = snapshot(vec![
+            msg("X", PrivateDirection::Me),
+            msg("Y", PrivateDirection::Them),
+        ]);
+        let report = bridge
+            .ingest_into_runtime(&mut runtime, &unrelated, 3)
+            .unwrap();
+        assert_eq!(report.bridge_state, "AMBIGUOUS");
+        assert_eq!(runtime.host_counts().unwrap().0, 2);
+    }
+
+    #[test]
+    fn backpressure_retry_reuses_canonical_ids_and_commits_cursor_only_after_success() {
+        let mut configured = entry(ConversationKind::Private);
+        configured.binding.max_pending = 1;
+        configured.binding.max_batch = 1;
+        let binding = configured.binding.clone();
+        let (_dir, mut runtime) = runtime(&binding);
+        let mut bridge = NativeObservationBridge::new(vec![configured], acceptance()).unwrap();
+
+        let first = snapshot(vec![
+            msg("A", PrivateDirection::Me),
+            msg("B", PrivateDirection::Them),
+        ]);
+        bridge
+            .ingest_into_runtime(&mut runtime, &first, 10)
+            .unwrap();
+
+        let burst = snapshot(vec![
+            msg("A", PrivateDirection::Me),
+            msg("B", PrivateDirection::Them),
+            msg("C", PrivateDirection::Them),
+            msg("D", PrivateDirection::Them),
+        ]);
+        assert!(matches!(
+            bridge.ingest_into_runtime(&mut runtime, &burst, 20),
+            Err(HostError::Backpressure)
+        ));
+        assert_eq!(runtime.host_counts().unwrap().0, 3);
+
+        runtime.set_host_paused(true).unwrap();
+        let report = bridge
+            .ingest_into_runtime(&mut runtime, &burst, 30)
+            .unwrap();
+        assert_eq!(report.bridge_state, "NEW");
+        assert_eq!(report.observations, 2);
+        assert_eq!(report.duplicates, 1);
+        assert_eq!(report.ignored, 1);
+        assert_eq!(runtime.host_counts().unwrap().0, 4);
+
+        let report = bridge
+            .ingest_into_runtime(&mut runtime, &burst, 40)
+            .unwrap();
+        assert_eq!(report.bridge_state, "NO_CHANGE");
+        assert_eq!(runtime.host_counts().unwrap().0, 4);
     }
 }

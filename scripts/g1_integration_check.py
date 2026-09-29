@@ -34,7 +34,7 @@ def fingerprint():
     return digest.hexdigest()
 
 
-TEST_MINIMUMS = {"rust-tests": 118, "cipher-disabled": 1, "python-tests": 49, "swift-tests": 71}
+TEST_MINIMUMS = {"rust-tests": 121, "cipher-disabled": 1, "python-tests": 49, "swift-tests": 71}
 
 
 def executed_tests(label, log):
@@ -96,6 +96,8 @@ def main():
         ("cipher-disabled", [cargo,"test","--locked","-p","foxbot-host","--no-default-features","--lib",
                              "tests::disabled_cipher_feature_rejects_protected_entry_without_creating_plaintext","--","--exact"]),
         ("build-tools", [cargo,"build","--locked","-p","foxbot-host","-p","foxbot-http"]),
+        ("g2d-bridge-smoke", [cargo,"run","--quiet","--locked","-p","foxbot-host","--",
+                              "bridge-sim-probe",str(directory / "g2d-state"),"--allow-plaintext-synthetic"]),
         ("http-smoke", [sys.executable,"scripts/http_smoke.py"]),
         ("host-smoke", [sys.executable,"scripts/host_smoke.py"]),
         ("python-tests", [sys.executable,"-m","unittest","discover","-s","scripts/tests","-p","test_*.py"]),

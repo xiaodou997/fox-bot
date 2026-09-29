@@ -2,6 +2,10 @@
 use foxbot_core::{simulation::*, *};
 use foxbot_host::{
     credentials::{CredentialRef, CredentialStore, NativeCredentials, Secret},
+    native_bridge::{
+        GroundTruthAcceptance, NativeConversationBinding, NativeObservationBridge,
+        PrivateBridgeMessage, PrivateDirection, PrivateMessageSnapshot,
+    },
     native_read::{NativeReadHost, NativeWorkerConfig},
     ownership::DeviceOwner,
     *,
@@ -90,6 +94,7 @@ async fn run() -> foxbot_host::Result<()> {
                   foxbot-host set-token NAME --confirm-keychain-write  (secret on stdin, never argv)\n\
                   foxbot-host keychain-smoke --allow-keychain-test\n\
                   foxbot-host native-read-probe WORKER --allow-native-read\n\
+                  foxbot-host bridge-sim-probe STATE --allow-plaintext-synthetic\n\
                   Test only: foxbot-host lock-probe --hold"
         );
         return Ok(());
@@ -159,6 +164,114 @@ async fn run() -> foxbot_host::Result<()> {
             );
             return Ok(());
         }
+    }
+    if args[0] == "bridge-sim-probe" {
+        if args.len() != 3 || args[2] != "--allow-plaintext-synthetic" {
+            return Err(HostError::Config);
+        }
+        let state = PathBuf::from(&args[1]);
+        if state.exists() {
+            return Err(HostError::Config);
+        }
+        let mut builder = std::fs::DirBuilder::new();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::DirBuilderExt;
+            builder.mode(0o700);
+        }
+        builder.create(&state).map_err(|_| HostError::Storage)?;
+
+        let mut binding = Binding::paused(fixture_key());
+        binding.enabled = true;
+        binding.quiet_ms = 0;
+        binding.max_wait_ms = 0;
+        let first = PrivateMessageSnapshot {
+            schema_version: "foxbot.private-message-snapshot.v1".into(),
+            strategy: "WECHAT_HEURISTIC_V0".into(),
+            application_session_fingerprint: "c".repeat(64),
+            conversation_fingerprint: "a".repeat(64),
+            partial_reasons: vec!["HEURISTIC_REGION".into()],
+            messages: vec![
+                PrivateBridgeMessage {
+                    text: "synthetic-A".into(),
+                    direction: PrivateDirection::Them,
+                    sender_fingerprint: Some("b".repeat(64)),
+                    complete: true,
+                },
+                PrivateBridgeMessage {
+                    text: "synthetic-B".into(),
+                    direction: PrivateDirection::Me,
+                    sender_fingerprint: None,
+                    complete: true,
+                },
+                PrivateBridgeMessage {
+                    text: "synthetic-C".into(),
+                    direction: PrivateDirection::Them,
+                    sender_fingerprint: Some("b".repeat(64)),
+                    complete: true,
+                },
+            ],
+        };
+        let configured = NativeConversationBinding::from_current_snapshot(&first, binding.clone())?;
+        let acceptance = GroundTruthAcceptance {
+            schema_version: "foxbot.g2c-ground-truth-result.v1".into(),
+            strategy: "WECHAT_HEURISTIC_V0".into(),
+            revision: "g2d-synthetic-v1".into(),
+            accepted: true,
+            cases: 6,
+            labeled_messages: 24,
+            covered_tags: vec![
+                "private".into(),
+                "group".into(),
+                "duplicate_text".into(),
+                "numeric".into(),
+                "multiline".into(),
+                "reference".into(),
+            ],
+            direction_errors: 0,
+            sender_errors: 0,
+            message_count_errors: 0,
+            text_errors: 0,
+        };
+        let mut bridge = NativeObservationBridge::new(vec![configured], acceptance)?;
+        let mut runtime = Runtime::open_simulation(&state)?;
+        runtime.bind(&binding)?;
+        runtime.set_host_paused(false)?;
+        let baseline = bridge.ingest_into_runtime(&mut runtime, &first, 1)?;
+
+        let mut second = first.clone();
+        second.messages.remove(0);
+        second.messages.push(PrivateBridgeMessage {
+            text: "synthetic-D".into(),
+            direction: PrivateDirection::Them,
+            sender_fingerprint: Some("b".repeat(64)),
+            complete: true,
+        });
+        let new = bridge.ingest_into_runtime(&mut runtime, &second, 2)?;
+        let repeat = bridge.ingest_into_runtime(&mut runtime, &second, 3)?;
+        let counts = runtime.host_counts()?;
+        drop(runtime);
+        std::fs::remove_dir_all(&state).map_err(|_| HostError::Storage)?;
+        println!(
+            "{}",
+            serde_json::json!({
+                "schema_version":"foxbot.g2d-bridge-smoke.v1",
+                "status":"PASS",
+                "baseline":baseline,
+                "new":new,
+                "repeat":repeat,
+                "runtime":{
+                    "messages":counts.0,
+                    "tasks":counts.1,
+                    "ready":counts.2,
+                    "unresolved_sends":counts.3
+                },
+                "external_model_requests":0,
+                "native_chat_operations":0,
+                "write_or_send_operations":0
+            })
+        );
+        return Ok(());
     }
     if matches!(args[0].as_str(), "init-key" | "set-token") {
         if args.len() != 3 || args[2] != "--confirm-keychain-write" {
