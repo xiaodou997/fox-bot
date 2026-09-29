@@ -141,3 +141,16 @@ known_gaps:
 | 写入/发送/导航 | NOT IMPLEMENTED | 探针无相应API或宿主联接 | C06～C10不继承核心模拟结果 |
 
 [探针实现与运行](../development/G2_MACOS_PROBE.md)说明默认只输出封闭元数据，不保存正文。以上是本轮观察摘要；对应精确代码提交和执行证据以独立回执为准，不以退出码0或complete_traversal直接标记能力通过。
+
+### G2b-1 截图 / OCR 子能力（不提升整行适配器状态）
+
+| 对象 | 实现 / 本轮证据 | 当前限制 |
+| --- | --- | --- |
+| Apple Vision 本地识别 | IMPLEMENTED；内存合成明暗图与空图实际 OCR | 中文/英文/编号/金额的有限样例，不是完整聊天数据集或性能验收 |
+| 单窗口捕获管线 | IMPLEMENTED；SCK 单窗口过滤、尺寸/目标复核、策略测试 | 真实目标成功捕获仍 BLOCKED，不把假窗口测试算真实截图 |
+| MC-WX 唯一窗口模式 | 实机返回 AMBIGUOUS_WINDOW，两个在屏候选；未调用捕获 | 不选择第一个/最大窗口，不退回整屏 |
+| MC-WX 显式焦点模式 | 实机两个候选均无位置/尺寸/完整几何匹配，NO_ELIGIBLE_WINDOW | 当前 capture=NOT_ATTEMPTED，OCR 未运行；窗口绑定待 G2b-2 |
+| MC-QQ | 复查仍 NOT_RUNNING | 未启动/登录客户端，运行中 AX 和截图证据 NOT_RUN |
+| 消息 / 草稿 / 自动回复 | 尚未从窗口 OCR 建立完整适配 | 账号/会话 UNVERIFIED；不声称 C02～C10 已通过 |
+
+[开发与运行边界](../development/G2_WINDOW_OCR.md)记录冷启动、原生初始化修复及未完成项；输出统计不是正文或发送授权。

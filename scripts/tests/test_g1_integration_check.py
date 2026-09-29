@@ -15,8 +15,15 @@ class IntegrationEvidenceTests(unittest.TestCase):
         self.assertEqual(executed_tests('rust-tests', log), 63)
 
     def test_swift_enclosing_suites_are_not_double_counted(self):
-        log = ('Executed 20 tests, with 0 failures (0 unexpected)\n' * 3)
+        log = ("Test Suite 'ProbeKitTests.xctest' passed at time.\n Executed 20 tests, with 0 failures\n"
+               "Test Suite 'All tests' passed at time.\n Executed 20 tests, with 0 failures\n") * 2
         self.assertEqual(executed_tests('swift-tests', log), 20)
+
+    def test_swift_multiple_bundles_are_summed_not_maximized(self):
+        log = ("Test Suite 'ProbeKitTests.xctest' passed at time.\n Executed 20 tests, with 0 failures\n"
+               "Test Suite 'OCRKitTests.xctest' passed at time.\n Executed 26 tests, with 0 failures\n")
+        self.assertEqual(executed_tests('swift-tests', log), 46)
+        self.assertEqual(executed_tests('swift-tests', 'Executed 46 tests, with 0 failures'), 0)
 
     def test_python_count_and_missing_summary(self):
         self.assertEqual(executed_tests('python-tests', 'Ran 23 tests in 0.2s\nOK'), 23)

@@ -35,7 +35,9 @@ def summary_report():
 class ProbeSupervisorTests(unittest.TestCase):
     def test_native_sources_contain_no_input_capture_or_network_actions(self):
         sources = Path(__file__).resolve().parents[2] / "native/macos-probe/Sources"
-        text = "\n".join(path.read_text() for path in sources.rglob("*.swift"))
+        # G2a remains capture-free. The separate OCRCLI/OCRKit product has its own safety checks.
+        text = "\n".join(path.read_text() for name in ("ProbeCLI", "ProbeKit")
+                         for path in (sources / name).rglob("*.swift"))
         forbidden = ["AXUIElementPerformAction", "AXUIElementSetAttributeValue", "AXUIElementPostKeyboardEvent",
                      "CGEventPost", "CGRequestScreenCaptureAccess", "AXIsProcessTrustedWithOptions",
                      "NSPasteboard", "URLSession", "SCStream", "SCScreenshotManager", "AXManualAccessibility"]

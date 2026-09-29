@@ -34,7 +34,7 @@ def fingerprint():
     return digest.hexdigest()
 
 
-TEST_MINIMUMS = {"rust-tests": 106, "cipher-disabled": 1, "python-tests": 23, "swift-tests": 20}
+TEST_MINIMUMS = {"rust-tests": 106, "cipher-disabled": 1, "python-tests": 37, "swift-tests": 51}
 
 
 def executed_tests(label, log):
@@ -44,8 +44,11 @@ def executed_tests(label, log):
     if label == "python-tests":
         return max([int(n) for n in re.findall(r"^Ran (\d+) tests? in ", log, re.MULTILINE)] or [0])
     if label == "swift-tests":
-        # XCTest repeats totals at enclosing suites; never sum those duplicates.
-        return max([int(n) for n in re.findall(r"Executed (\d+) tests?, with 0 failures", log)] or [0])
+        # SwiftPM can launch multiple XCTest bundles. Count each bundle once, not its enclosing suites.
+        bundles = {}
+        for name, count in re.findall(r"Test Suite '([^'\n]+\.xctest)' passed[^\n]*\n\s*Executed (\d+) tests?, with 0 failures", log):
+            bundles[name] = max(bundles.get(name, 0), int(count))
+        return sum(bundles.values())
     return None
 
 

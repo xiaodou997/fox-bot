@@ -5,6 +5,8 @@
 - 关联：[集成对账](G1_INTEGRATION.md) · [能力矩阵](../adapters/CAPABILITY_MATRIX.md) · [验收清单](../acceptance/ACCEPTANCE_CHECKLIST.md)
 - 实际结果：[G1集成与G2a验收回执](../acceptance/receipts/2026-09-29-g1-integration-g2a.md)，真实应用只读观察与合成测试分别记录。
 
+后续状态：同一 Package 已新增独立 [G2b-1 截图/OCR](G2_WINDOW_OCR.md) 产品；本文仅描述原有 ProbeCLI/ProbeKit，其默认不截图、不输出正文的行为保持不变。
+
 ## 1. 本增量实际做什么
 
 `native/macos-probe/` 是不依赖第三方包的 Swift Package，包含纯元数据分析库 ProbeKit、原生只读 ProbeCLI 和合成树 XCTest。它不链接 foxbot-host/core/http，不访问账本或 API key，不启动模型，不包含聊天输入、发送或截图实现。

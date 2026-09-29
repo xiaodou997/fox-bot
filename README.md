@@ -2,7 +2,7 @@
 
 面向微信、QQ、飞书和 X 私信的跨平台消息自动化客户端。
 
-**当前状态：已新增 G1 集成检查入口和 G2a macOS 只读可读性探针，保留 G1a/G1b/G1c。** 探针限定微信/QQ，只输出权限、版本、节点和可读性摘要；完整消息适配器、OCR、真实发送、桌面界面和 APK 尚未实现。G1 剩余门禁已独立对账，不宣称完整 Freeze 或产品可用。
+**当前状态：G2b-1 单窗口截图与 Apple Vision 本地 OCR 实现已落地，保留 G1 集成与 G2a AX 探针。** 合成 OCR 有实际测试；微信窗口绑定尚未通过，QQ 当前未运行。完整消息适配器、真实发送、桌面界面和 APK 尚未实现；不把合成图识别当作微信端到端可用，也不宣布完整 G1/G2 Freeze。
 
 ## 产品边界
 
@@ -61,6 +61,15 @@ python3 scripts/macos_probe.py --app wechat --allow-ax-read
 ```
 
 第一条运行本地测试并构建探针，不读取真实聊天；后两条探测已运行应用，微信命令显式允许读取AX可读性但不输出正文。探针不截屏、不发消息、不改权限，也不自动启动客户端。参见 [G1集成对账](docs/development/G1_INTEGRATION.md)与[G2a探针说明](docs/development/G2_MACOS_PROBE.md)。
+
+## 单窗口本地 OCR
+
+```bash
+python3 scripts/macos_ocr.py --app wechat
+python3 scripts/macos_ocr.py --app wechat --capture-and-ocr --focused-window
+```
+
+第一条不截图；第二条显式绑定既有焦点窗口，只有权限、几何与唯一性均满足时才调用单窗口捕获和本地 OCR。输出只含统计，不保存图像或正文。多窗口歧义或 AX/SCK 几何不匹配时停止，不退回整屏截图。当前实机阻塞、合成测试及预算见 [G2b-1 开发说明](docs/development/G2_WINDOW_OCR.md)。
 
 ## 文档入口
 
