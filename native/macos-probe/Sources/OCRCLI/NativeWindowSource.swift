@@ -1,6 +1,7 @@
 import AppKit
 import ApplicationServices
 import CoreGraphics
+import Darwin
 import ScreenCaptureKit
 import OCRKit
 import ProbeKit
@@ -9,6 +10,17 @@ import ProbeKit
 /// input actions, window activation, permission request or screenshot file exists here.
 final class NativeWindowSource: WindowSource {
     private var selectedWindows: [UInt32: SCWindow] = [:]
+
+    private func processLaunchTime(_ pid: Int32) -> TimeInterval? {
+        var info = proc_bsdinfo()
+        let size = MemoryLayout<proc_bsdinfo>.size
+        let written = withUnsafeMutablePointer(to: &info) {
+            proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, UnsafeMutableRawPointer($0), Int32(size))
+        }
+        guard written == size, info.pbi_start_tvsec > 0 else { return nil }
+        return TimeInterval(info.pbi_start_tvsec)
+            + TimeInterval(info.pbi_start_tvusec) / 1_000_000
+    }
 
     /// WeChat 4.x exposes its AX root through com.tencent.xinWeChat while large
     /// compositor windows can be owned by the nested WeChatAppEx application.
@@ -43,9 +55,13 @@ final class NativeWindowSource: WindowSource {
            value.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || ".-_".contains($0)) }) {
             version = value
         }
+        let launchTime = instances.count == 1
+            ? (instances[0].launchDate?.timeIntervalSince1970
+                ?? processLaunchTime(instances[0].processIdentifier))
+            : nil
         return CaptureMetadata(runningInstances: instances.count,
             pid: instances.count == 1 ? instances[0].processIdentifier : nil,
-            launchTime: instances.count == 1 ? instances[0].launchDate?.timeIntervalSince1970 : nil,
+            launchTime: launchTime,
             permission: CGPreflightScreenCaptureAccess(),
             osVersion: "\(os.majorVersion).\(os.minorVersion).\(os.patchVersion)", applicationVersion: version)
     }
