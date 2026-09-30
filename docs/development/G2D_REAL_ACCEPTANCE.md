@@ -200,6 +200,10 @@ repeat.observations    = 0
 
 真实 verify 还暴露出会话类型绑定风险：一次 baseline 实际停留在群聊，但命令传入了 `private`。现在 private baseline 只要 snapshot 中出现 sender fingerprint 就 fail-closed；group baseline 则继续要求所有 incoming 都具备 sender fingerprint。这样错误的群聊→私聊绑定不会写入 baseline/config。
 
+同一轮真机验证还发现 conversation fingerprint 会被标题下方约 0.03 高度内的其它 OCR 行污染，导致同一个“科技小豆”私聊在同一进程内产生不同 hash。标题拼接现在只接收与首个标题片段垂直中心接近、且阈值受标题文字高度约束的片段；真实“科技小豆”稳定回到此前 private canonical capture 的同一 fingerprint。
+
+跨帧 continuity 也不能直接依赖原始 OCR 字符串完全相等：真机上同一条消息会在 Han↔ASCII 边界偶发增删排版空格。Bridge 现在保留原始 OCR 文本用于实际消息正文，同时使用独立的 continuity text 做帧间签名比较；它只折叠水平空白并忽略 Han↔ASCII 边界空格，英文内部空格等内容仍保持区分。
+
 ## 8. 下一步
 
 现在代码侧已经准备好。真实 G2d 剩余工作是测试人员本机完成：

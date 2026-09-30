@@ -135,7 +135,8 @@ public enum WeChatMessageParser {
             return $0.bounds.minY < $1.bounds.minY
         }
         guard let first = candidates.first else { return nil }
-        let row = candidates.filter { abs($0.bounds.minY - first.bounds.minY) < 0.03 }
+        let rowTolerance = min(0.012, max(0.006, first.bounds.height * 0.75))
+        let row = candidates.filter { abs($0.bounds.midY - first.bounds.midY) <= rowTolerance }
             .sorted { $0.bounds.minX < $1.bounds.minX }
         var kept: [OCRLine] = []
         for line in row {

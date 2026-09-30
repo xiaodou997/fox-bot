@@ -228,6 +228,20 @@ final class MessageParserTests: XCTestCase {
         XCTAssertEqual(parsed.messages.map(\.text), ["正文"])
     }
 
+    func testConversationFingerprintDoesNotAbsorbLowerHeaderNoise() {
+        let clean = parserSnapshot([
+            parserLine("科技小豆", 0.2700, 0.0194, 0.0460, 0.0150)
+        ])
+        let noisy = parserSnapshot([
+            parserLine("科技小豆", 0.2700, 0.0194, 0.0460, 0.0150),
+            parserLine("标题下方其它文字", 0.3235, 0.0486, 0.2623, 0.0101)
+        ])
+        XCTAssertEqual(
+            WeChatMessageParser.conversationFingerprint(noisy),
+            WeChatMessageParser.conversationFingerprint(clean)
+        )
+    }
+
     func testPrivateSnapshotRequiresHeaderIdentityAndHashesSender() throws {
         let snapshot = parserSnapshot([
             parserLine("会话名", 0.40, 0.04, 0.12, 0.03),

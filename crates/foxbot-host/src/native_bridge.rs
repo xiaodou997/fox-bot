@@ -137,13 +137,23 @@ pub struct NativeBridgeConfig {
     pub conversations: Vec<NativeConversationBinding>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 struct Signature {
     text: String,
+    continuity_text: String,
     direction: PrivateDirection,
     sender: Option<String>,
     complete: bool,
 }
+impl PartialEq for Signature {
+    fn eq(&self, other: &Self) -> bool {
+        self.continuity_text == other.continuity_text
+            && self.direction == other.direction
+            && self.sender == other.sender
+            && self.complete == other.complete
+    }
+}
+impl Eq for Signature {}
 
 #[derive(Clone, Debug)]
 struct TrackState {
@@ -392,10 +402,47 @@ fn signature(message: &PrivateBridgeMessage) -> Result<Signature> {
     }
     Ok(Signature {
         text: message.text.clone(),
+        continuity_text: continuity_text(&message.text),
         direction: message.direction.clone(),
         sender: message.sender_fingerprint.clone(),
         complete: message.complete,
     })
+}
+
+fn is_han(value: char) -> bool {
+    matches!(value as u32, 0x3400..=0x4DBF | 0x4E00..=0x9FFF | 0xF900..=0xFAFF)
+}
+
+fn continuity_text(value: &str) -> String {
+    let line_normalized = value.replace("\r\n", "\n").replace('\r', "\n");
+    let mut collapsed = String::with_capacity(line_normalized.len());
+    let mut horizontal_space = false;
+    for value in line_normalized.trim().chars() {
+        if matches!(value, ' ' | '\t') {
+            if !horizontal_space {
+                collapsed.push(' ');
+                horizontal_space = true;
+            }
+        } else {
+            collapsed.push(value);
+            horizontal_space = false;
+        }
+    }
+    let values = collapsed.chars().collect::<Vec<_>>();
+    let mut normalized = String::with_capacity(collapsed.len());
+    for (index, value) in values.iter().copied().enumerate() {
+        if value == ' ' && index > 0 && index + 1 < values.len() {
+            let before = values[index - 1];
+            let after = values[index + 1];
+            if (is_han(before) && after.is_ascii_alphanumeric())
+                || (before.is_ascii_alphanumeric() && is_han(after))
+            {
+                continue;
+            }
+        }
+        normalized.push(value);
+    }
+    normalized
 }
 
 fn baseline(
@@ -641,6 +688,33 @@ mod tests {
             new[0].message.sender.as_deref(),
             Some("peer:sim-conversation")
         );
+    }
+
+    #[test]
+    fn cjk_ascii_boundary_spacing_drift_does_not_break_sliding_overlap() {
+        let mut bridge =
+            NativeObservationBridge::new(vec![entry(ConversationKind::Private)], acceptance())
+                .unwrap();
+        let first = snapshot(vec![
+            msg("中文 B456 正常", PrivateDirection::Me),
+            msg("数字 56789 识别正常", PrivateDirection::Me),
+            msg("Mixed Test 正常", PrivateDirection::Them),
+        ]);
+        assert!(matches!(
+            bridge.bridge(&first, 10).unwrap(),
+            BridgeOutcome::Baseline(_)
+        ));
+
+        let second = snapshot(vec![
+            msg("数字56789识别正常", PrivateDirection::Me),
+            msg("Mixed Test正常", PrivateDirection::Them),
+            msg("新增 K123 消息", PrivateDirection::Them),
+        ]);
+        let BridgeOutcome::New(new) = bridge.bridge(&second, 20).unwrap() else {
+            panic!("expected one new message")
+        };
+        assert_eq!(new.len(), 1);
+        assert_eq!(new[0].message.text.as_deref(), Some("新增 K123 消息"));
     }
 
     #[test]
