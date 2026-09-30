@@ -236,6 +236,9 @@ async fn run() -> foxbot_host::Result<()> {
             sender_errors: 0,
             message_count_errors: 0,
             text_errors: 0,
+            text_edit_distance: 0,
+            text_expected_characters: 0,
+            text_error_rate_bp: 0,
         };
         let mut bridge = NativeObservationBridge::new(vec![configured], acceptance)?;
         let mut runtime = Runtime::open_simulation(&state)?;

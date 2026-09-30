@@ -68,6 +68,9 @@ class G2DRealStatusTests(unittest.TestCase):
                 "sender_errors": 0,
                 "message_count_errors": 0,
                 "text_errors": 0,
+                "text_edit_distance": 0,
+                "text_expected_characters": 240,
+                "text_error_rate_bp": 0,
             },
         )
         result = status(self.session)
@@ -88,6 +91,9 @@ class G2DRealStatusTests(unittest.TestCase):
             "sender_errors": 0,
             "message_count_errors": 0,
             "text_errors": 0,
+            "text_edit_distance": 0,
+            "text_expected_characters": 240,
+            "text_error_rate_bp": 0,
         }
         write_private(self.directory / "acceptance.json", acceptance)
         write_private(self.directory / "bridge-config.json", {"placeholder": True})

@@ -51,6 +51,12 @@ pub struct GroundTruthAcceptance {
     pub sender_errors: u32,
     pub message_count_errors: u32,
     pub text_errors: u32,
+    #[serde(default)]
+    pub text_edit_distance: u32,
+    #[serde(default)]
+    pub text_expected_characters: u32,
+    #[serde(default)]
+    pub text_error_rate_bp: u32,
 }
 impl GroundTruthAcceptance {
     pub fn validate(&self) -> Result<()> {
@@ -63,6 +69,16 @@ impl GroundTruthAcceptance {
             "reference",
         ];
         let tags: HashSet<_> = self.covered_tags.iter().map(String::as_str).collect();
+        let text_valid = if self.text_expected_characters > 0 {
+            self.text_edit_distance.saturating_mul(100)
+                <= self.text_expected_characters.saturating_mul(2)
+                && self.text_error_rate_bp <= 200
+        } else {
+            // Backward compatibility for pre-CER acceptance receipts.
+            self.text_edit_distance == 0
+                && self.text_error_rate_bp == 0
+                && self.text_errors.saturating_mul(100) <= self.labeled_messages.saturating_mul(2)
+        };
         let valid = self.schema_version == "foxbot.g2c-ground-truth-result.v1"
             && !self.strategy.is_empty()
             && self.strategy.len() <= 128
@@ -74,7 +90,7 @@ impl GroundTruthAcceptance {
             && self.direction_errors == 0
             && self.sender_errors == 0
             && self.message_count_errors == 0
-            && self.text_errors.saturating_mul(100) <= self.labeled_messages.saturating_mul(2);
+            && text_valid;
         if !valid || self.accepted != valid {
             return Err(HostError::Untrusted);
         }
@@ -497,6 +513,9 @@ mod tests {
             sender_errors: 0,
             message_count_errors: 0,
             text_errors: 0,
+            text_edit_distance: 0,
+            text_expected_characters: 0,
+            text_error_rate_bp: 0,
         }
     }
 

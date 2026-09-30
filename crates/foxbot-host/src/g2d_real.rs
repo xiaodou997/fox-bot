@@ -448,6 +448,9 @@ mod tests {
             sender_errors: 0,
             message_count_errors: 0,
             text_errors: 0,
+            text_edit_distance: 0,
+            text_expected_characters: 0,
+            text_error_rate_bp: 0,
         }
     }
 

@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from g2c_ground_truth import evaluate
+from g2c_ground_truth import edit_distance, evaluate
 
 
 def message(text, direction="THEM", sender=True):
@@ -38,6 +38,9 @@ class GroundTruthTests(unittest.TestCase):
         self.assertEqual(result["labeled_messages"], 24)
         self.assertEqual(result["direction_errors"], 0)
         self.assertEqual(result["message_count_errors"], 0)
+        self.assertEqual(result["text_edit_distance"], 0)
+        self.assertGreater(result["text_expected_characters"], 0)
+        self.assertEqual(result["text_error_rate_bp"], 0)
 
     def test_direction_or_sender_error_blocks_acceptance(self):
         source = document()
@@ -72,6 +75,22 @@ class GroundTruthTests(unittest.TestCase):
         source = document()
         source["cases"][0]["observed"][0]["text"] = "wrong"
         self.assertFalse(evaluate(source)["accepted"])
+
+    def test_character_error_rate_not_message_mismatch_rate(self):
+        source = document()
+        original = source["cases"][0]["observed"][0]["text"]
+        source["cases"][0]["observed"][0]["text"] = original[:-1] + "b"
+        result = evaluate(source)
+        self.assertTrue(result["accepted"])
+        self.assertEqual(result["text_errors"], 1)
+        self.assertEqual(result["text_edit_distance"], 1)
+        self.assertLessEqual(result["text_error_rate_bp"], 200)
+
+    def test_edit_distance_handles_insert_delete_replace(self):
+        self.assertEqual(edit_distance("abc", "abc"), 0)
+        self.assertEqual(edit_distance("abc", "ab"), 1)
+        self.assertEqual(edit_distance("abc", "abcd"), 1)
+        self.assertEqual(edit_distance("abc", "axc"), 1)
 
 
 if __name__ == "__main__":
