@@ -59,7 +59,7 @@ public enum WeChatMessageParser {
     // Read slightly left of the body region so wide/group layouts whose title begins around
     // x≈0.28 are still available for conversation identity. Message parsing remains gated by
     // chatRegion x>=0.32, so sidebar text cannot become chat messages.
-    public static let readRegion = CGRect(x: 0.27, y: 0.02, width: 0.73, height: 0.82)
+    public static let readRegion = CGRect(x: 0.27, y: 0.00, width: 0.73, height: 0.84)
     public static let chatRegion = CGRect(x: 0.32, y: 0.10, width: 0.68, height: 0.74)
     private static let minimumConfidence: Float = 0.30
 

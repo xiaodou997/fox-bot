@@ -27,6 +27,12 @@ final class MessageParserTests: XCTestCase {
         XCTAssertEqual(WeChatMessageParser.direction(x: 0.52, width: 0.31), .me)
     }
 
+    func testReadRegionIncludesTopTitleWhileChatRegionExcludesHeader() {
+        XCTAssertEqual(WeChatMessageParser.readRegion.minY, 0.0)
+        XCTAssertLessThanOrEqual(WeChatMessageParser.readRegion.minX, 0.275)
+        XCTAssertEqual(WeChatMessageParser.chatRegion.minY, 0.10)
+    }
+
     func testRegionAndNoiseAreExcludedWithoutInventingMessages() {
         let snapshot = parserSnapshot([
             parserLine("会话列表", 0.05, 0.30),

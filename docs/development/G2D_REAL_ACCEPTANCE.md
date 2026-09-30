@@ -192,6 +192,8 @@ repeat.observations    = 0
 
 群成员消息在窗口底部时还暴露出原 chatRegion maxY=0.76 过于保守：昵称位于 y≈0.734，而对应正文可落在 y≈0.757~0.816。readRegion/chatRegion 底边现扩到 0.84，同时回归测试明确验证 y≈0.81 的聊天正文可进入、y≈0.88 的输入区草稿仍被排除。
 
+私聊实测还发现标题可贴近窗口最上沿（bbox minY≈0.016）。readRegion 顶边因此从 y=0.02 调整到 y=0.00，而 chatRegion 仍从 y=0.10 开始，保证顶部身份读取完整但不会把标题/工具栏纳入消息流。重复文本验收不使用单字短词作为 canonical 样本：Apple Vision 对相邻单字气泡可能只返回一个 text observation，最终 duplicate_text 应使用足够长且完全相同的两条测试消息验证去重语义。
+
 ## 8. 下一步
 
 现在代码侧已经准备好。真实 G2d 剩余工作是测试人员本机完成：
