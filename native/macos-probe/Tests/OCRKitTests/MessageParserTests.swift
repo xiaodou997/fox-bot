@@ -135,6 +135,18 @@ final class MessageParserTests: XCTestCase {
         XCTAssertFalse(fingerprint?.contains("联系人") ?? true)
     }
 
+    func testConversationFingerprintAcceptsGroupTitleJustLeftOfChatBody() {
+        let snapshot = parserSnapshot([
+            parserLine("测试群聊标题", 0.2799, 0.041, 0.23, 0.018),
+            parserLine("会话列表文字", 0.20, 0.05, 0.08, 0.02),
+            parserLine("正文", 0.40, 0.30, 0.12, 0.03)
+        ])
+        let fingerprint = WeChatMessageParser.conversationFingerprint(snapshot)
+        XCTAssertEqual(fingerprint?.count, 64)
+        let parsed = WeChatMessageParser.parse(snapshot)
+        XCTAssertEqual(parsed.messages.map(\.text), ["正文"])
+    }
+
     func testPrivateSnapshotRequiresHeaderIdentityAndHashesSender() throws {
         let snapshot = parserSnapshot([
             parserLine("会话名", 0.40, 0.04, 0.12, 0.03),

@@ -56,7 +56,10 @@ public enum WeChatMessageParser {
     // Reference project used x>=0.32 and bottom-origin body 0.24...0.90 on WeChat 4.x.
     // FoxBot stores Vision boxes in top-origin coordinates, yielding y 0.10...0.76.
     public static let strategy = "WECHAT_HEURISTIC_V0"
-    public static let readRegion = CGRect(x: 0.32, y: 0.02, width: 0.68, height: 0.74)
+    // Read slightly left of the body region so wide/group layouts whose title begins around
+    // x≈0.28 are still available for conversation identity. Message parsing remains gated by
+    // chatRegion x>=0.32, so sidebar text cannot become chat messages.
+    public static let readRegion = CGRect(x: 0.27, y: 0.02, width: 0.73, height: 0.74)
     public static let chatRegion = CGRect(x: 0.32, y: 0.10, width: 0.68, height: 0.66)
     private static let minimumConfidence: Float = 0.30
 
@@ -110,7 +113,7 @@ public enum WeChatMessageParser {
         let candidates = snapshot.lines.filter {
             $0.confidence >= minimumConfidence
                 && $0.bounds.midY >= 0.015 && $0.bounds.midY < 0.10
-                && $0.bounds.minX >= 0.32 && $0.bounds.minX < 0.94
+                && $0.bounds.minX >= 0.27 && $0.bounds.minX < 0.94
                 && !isNoise($0.text)
         }.sorted {
             if abs($0.bounds.minY - $1.bounds.minY) < 0.005 { return $0.bounds.minX < $1.bounds.minX }

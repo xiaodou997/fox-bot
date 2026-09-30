@@ -117,6 +117,40 @@ final class WindowProbeTests: XCTestCase {
         XCTAssertEqual(report.windowMatching?.frameMatches, 1)
         XCTAssertEqual(source.captures, 1)
     }
+    func testUniqueOnScreenDuplicateWinsWhenActiveFlagLags() async {
+        let source = FakeWindowSource()
+        let frame = source.focusFrameValue
+        source.items = [
+            CaptureWindow(id: 7, pid: 42, bundleID: TargetApp.wechat.bundleID,
+                frame: frame, contentSize: frame.size, scale: 1, onScreen: true, active: false),
+            CaptureWindow(id: 8, pid: 42, bundleID: TargetApp.wechat.bundleID,
+                frame: frame, contentSize: frame.size, scale: 1, onScreen: false, active: false,
+                ownerPid: 77, ownerBundleID: "com.tencent.flue.WeChatAppEx"),
+            CaptureWindow(id: 9, pid: 42, bundleID: TargetApp.wechat.bundleID,
+                frame: frame, contentSize: frame.size, scale: 1, onScreen: false, active: false,
+                ownerPid: 77, ownerBundleID: "com.tencent.flue.WeChatAppEx")
+        ]
+        let report = await WindowOCRProbe.run(app: .wechat, requested: true, ocrRequested: false,
+            source: source, selection: .focused)
+        XCTAssertEqual(report.status, "CAPTURE_SUMMARY")
+        XCTAssertEqual(report.eligibleWindows, 1)
+        XCTAssertEqual(report.windowMatching?.frameMatches, 1)
+        XCTAssertEqual(source.captures, 1)
+    }
+    func testTwoOnScreenSameFrameRemainAmbiguousWhenNeitherIsActive() async {
+        let source = FakeWindowSource()
+        let frame = source.focusFrameValue
+        source.items = [
+            CaptureWindow(id: 7, pid: 42, bundleID: TargetApp.wechat.bundleID,
+                frame: frame, contentSize: frame.size, scale: 1, onScreen: true, active: false),
+            CaptureWindow(id: 8, pid: 42, bundleID: TargetApp.wechat.bundleID,
+                frame: frame, contentSize: frame.size, scale: 1, onScreen: true, active: false)
+        ]
+        let report = await WindowOCRProbe.run(app: .wechat, requested: true, ocrRequested: false,
+            source: source, selection: .focused)
+        XCTAssertEqual(report.status, "AMBIGUOUS_WINDOW")
+        XCTAssertEqual(source.captures, 0)
+    }
     func testFocusedGeometryMismatchDoesNotFallBackToOnlyWindow() async {
         let source = FakeWindowSource(); source.focusFrameValue = CGRect(x: 400, y: 400, width: 600, height: 300)
         let report = await WindowOCRProbe.run(app: .wechat, requested: true, source: source, selection: .focused)

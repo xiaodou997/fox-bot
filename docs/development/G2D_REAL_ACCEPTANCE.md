@@ -188,6 +188,8 @@ repeat.observations    = 0
 
 实际 `duplicate_text` 场景暴露了微信宽窗口标题可能位于 top-left 归一化 x≈0.81 的布局。标题识别仍限定在顶部标题带 y<0.10，但横向范围从 x<0.66 扩展到 x<0.94；真实场景重新采样后通过。该调整没有扩大到正文 y 区域，也没有使用联系人文本本身作为日志或公开输出。
 
+后续真实群聊又暴露两个布局/窗口边界：群标题可从 x≈0.28 开始，因此 OCR readRegion 左边界扩到 0.27，但消息 chatRegion 仍保持 x>=0.32；同时 ScreenCaptureKit 可能返回一个 on-screen 主窗口和多个同几何 off-screen AppEx 镜像。focused 模式只在同框候选中存在唯一 on-screen 窗口时进行消歧；若存在多个 on-screen 候选仍保持 AMBIGUOUS_WINDOW。
+
 ## 8. 下一步
 
 现在代码侧已经准备好。真实 G2d 剩余工作是测试人员本机完成：
