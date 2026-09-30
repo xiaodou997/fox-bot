@@ -190,6 +190,8 @@ repeat.observations    = 0
 
 后续真实群聊又暴露两个布局/窗口边界：群标题可从 x≈0.28 开始，因此 OCR readRegion 左边界扩到 0.27，但消息 chatRegion 仍保持 x>=0.32；同时 ScreenCaptureKit 可能返回一个 on-screen 主窗口和多个同几何 off-screen AppEx 镜像。focused 模式只在同框候选中存在唯一 on-screen 窗口时进行消歧；若存在多个 on-screen 候选仍保持 AMBIGUOUS_WINDOW。
 
+群成员消息在窗口底部时还暴露出原 chatRegion maxY=0.76 过于保守：昵称位于 y≈0.734，而对应正文可落在 y≈0.757~0.816。readRegion/chatRegion 底边现扩到 0.84，同时回归测试明确验证 y≈0.81 的聊天正文可进入、y≈0.88 的输入区草稿仍被排除。
+
 ## 8. 下一步
 
 现在代码侧已经准备好。真实 G2d 剩余工作是测试人员本机完成：

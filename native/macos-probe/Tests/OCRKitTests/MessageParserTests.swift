@@ -41,6 +41,18 @@ final class MessageParserTests: XCTestCase {
         XCTAssertTrue(result.partialReasons.contains("HEURISTIC_REGION"))
     }
 
+    func testLowerVisibleChatIsIncludedButInputAreaRemainsExcluded() {
+        let snapshot = parserSnapshot([
+            parserLine("群成员", 0.33, 0.73, 0.06, 0.018),
+            parserLine("底部可见正文", 0.335, 0.79, 0.14, 0.025),
+            parserLine("输入框草稿", 0.40, 0.88, 0.16, 0.03)
+        ])
+        let result = WeChatMessageParser.parse(snapshot)
+        XCTAssertEqual(result.messages.count, 1)
+        XCTAssertEqual(result.messages[0].text, "底部可见正文")
+        XCTAssertEqual(result.messages[0].sender, "群成员")
+    }
+
     func testDateSeparatorsAndCallSystemEventsAreExcludedConservatively() {
         let snapshot = parserSnapshot([
             parserLine("2025年12月6日 20:17", 0.54, 0.20),
