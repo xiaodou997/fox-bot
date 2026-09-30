@@ -1,8 +1,8 @@
 # FoxBot 文档导航
 
-当前文档基线：**v0.1 / G2 Freeze / 2026-09-30**。这是工程能力冻结基线，不是应用发布版本。
+当前文档基线：**v0.1 / G2 Freeze + G3a Draft Writer / 2026-10-01**。这是工程能力基线，不是应用发布版本。
 
-macOS 微信 G2 真实读取链已完成 Freeze：6 个 canonical ground-truth case / 60 条 expected 已验收，真实 acceptance=true；正确私聊建立 baseline 后，另一测试账号新增 1 条 incoming，Runtime 实测为 NEW / observations=1 / queued=1，重复读取为 NO_CHANGE。最终门禁为 Rust 131 / Python 61 / Swift 84。G2 仍没有任何聊天写入、点击发送或真实 ReplyProvider 调用；G3 草稿/发送必须独立验收。QQ 未运行，没有真实模型联调、真实发送、安装包或长稳结论。
+macOS 微信 G2 真实读取链已完成 Freeze：6 个 canonical ground-truth case / 60 条 expected 已验收，真实 acceptance=true；正确私聊建立 baseline 后，另一测试账号新增 1 条 incoming，Runtime 实测为 NEW / observations=1 / queued=1，重复读取为 NO_CHANGE。其上已加入 **G3a Draft Writer**：当前测试私聊可在 exact conversation fingerprint、微信前台、草稿为空的测试门禁下写入一段测试文本并由 OCR 回读完全确认；已有草稿会拒绝覆盖，整个路径没有 Enter/点击发送。C05 draft_read 仍是 OCR heuristic，不能检测所有 IME/隐藏草稿状态，因此生产 AUTO_REPLY 继续关闭。
 
 ## 1. 三份主文档
 
@@ -41,6 +41,8 @@ macOS 微信 G2 真实读取链已完成 Freeze：6 个 canonical ground-truth c
 | [G2d 真实验收工作流](development/G2D_REAL_ACCEPTANCE.md) | 私有采样、人工 ground-truth、显式 Binding、baseline、单条 incoming 验证与状态引导器 |
 | [G2d Readiness 回执](acceptance/receipts/2026-09-29-g2d-real-readiness.md) | 固定提交的真实私有采样、0600 权限、自我验收防护与 BLOCKED 边界 |
 | [G2 Freeze 回执](acceptance/receipts/2026-09-30-g2-freeze.md) | 6 类真实 ground-truth、real Observation PASS、最终门禁和 G2/G3 边界 |
+| [G3a Draft Writer](development/G3A_DRAFT_WRITER.md) | macOS 微信测试级草稿检测、前台/身份门禁、Unicode 回填、OCR 回读与 no-send 边界 |
+| [G3a Draft Writer 回执](acceptance/receipts/2026-10-01-g3a-draft-writer.md) | 已有草稿拒绝覆盖、空草稿真实写入回读和 send_attempted=false 的真机证据 |
 
 已执行的检查或测试回执保存到 `docs/acceptance/receipts/`，清单本身不作为累计通过报告。新增回执时使用稳定文件名，标记实际被检提交；文档回执的提交与被测程序提交可以不同，不能混写。
 
@@ -57,7 +59,7 @@ macOS 微信 G2 真实读取链已完成 Freeze：6 个 canonical ground-truth c
 - `NOT_RUN / PASS / FAIL / BLOCKED / NA`：案例结果；NA 附理由，BLOCKED 不是 PASS。
 - `ACCEPTED`：某提交、设备/系统、应用版本、聊天类型、通道和模式已有通过回执。
 
-MC-WX 的 **G2 只读 current-session 子能力**已有本机真实 PASS 回执，但 C05～C10 仍未完成，因此不能把整行适配器写成“支持微信自动回复”。其余首批适配器仍未取得对应真实回执；Android 微信是 `PROBE_ONLY`。不能因当前会话某个子能力通过就启用多会话值守，不能因一端成功把其他端一并标绿。
+MC-WX 的 **G2 current-session 读取链**已有本机真实 PASS；G3a 也已证明测试级 C06 fill 可真实回填并回读，且已有可见草稿会拒绝覆盖。但 C05 仍是 heuristic、C07～C10 未验收，因此不能把整行适配器写成“支持微信自动回复”。其余首批适配器仍未取得对应真实回执；Android 微信是 `PROBE_ONLY`。不能因当前会话某个子能力通过就启用多会话值守，不能因一端成功把其他端一并标绿。
 
 ## 5. 文档变更规则
 
@@ -71,6 +73,6 @@ MC-WX 的 **G2 只读 current-session 子能力**已有本机真实 PASS 回执�
 
 ## 6. 当前阶段和下一项
 
-G2 已 Freeze。下一项是 G3 当前会话写入链，先做 **G3a Draft Writer**：只在已验证的当前测试会话中识别唯一编辑器、读取并保护已有草稿、写入明确测试文本并回读核对；本阶段禁止 Enter、点击发送和任何 send action。通过 Draft Writer 后，再单独进入 Send Gate / Real Send。
+G2 已 Freeze，G3a Draft Writer 的测试级真实回填也已通过。下一项是 **G3b Safe Send Gate**：在任何发送动作开放前重新验证 app-session / conversation / revision / 前台归属 / 当前 draft / 人工输入与 UNKNOWN send 状态。G3a 本身仍不包含 Enter、点击发送或真实发送。
 
 目标应用版本与定制服务脱敏样例可在联调时补充，不阻塞模拟开发；未取得对应证据之前，不承诺真实客户端兼容性。根目录 scripts/check_docs.py 可直接检查本地 Markdown 文件目标、JSON 示例和案例引用，不联网检查外部链接。

@@ -3,13 +3,14 @@ import ApplicationServices
 import CoreGraphics
 import Darwin
 import ScreenCaptureKit
-import OCRKit
 import ProbeKit
 
 /// Uses ScreenCaptureKit's exact single-window filter. No full-display capture,
 /// input actions, window activation, permission request or screenshot file exists here.
-final class NativeWindowSource: WindowSource {
+public final class NativeWindowSource: WindowSource {
     private var selectedWindows: [UInt32: SCWindow] = [:]
+
+    public init() {}
 
     private func processLaunchTime(_ pid: Int32) -> TimeInterval? {
         var info = proc_bsdinfo()
@@ -45,7 +46,7 @@ final class NativeWindowSource: WindowSource {
         return family
     }
 
-    func metadata(_ app: TargetApp) -> CaptureMetadata {
+    public func metadata(_ app: TargetApp) -> CaptureMetadata {
         let os = ProcessInfo.processInfo.operatingSystemVersion
         let instances = NSRunningApplication.runningApplications(withBundleIdentifier: app.bundleID).filter { !$0.isTerminated }
         var version: String?
@@ -66,7 +67,7 @@ final class NativeWindowSource: WindowSource {
             osVersion: "\(os.majorVersion).\(os.minorVersion).\(os.patchVersion)", applicationVersion: version)
     }
 
-    func windows(_ app: TargetApp, pid: Int32) async throws -> [CaptureWindow] {
+    public func windows(_ app: TargetApp, pid: Int32) async throws -> [CaptureWindow] {
         // Include off-screen/other-Space windows because AX can legitimately focus a window
         // that ScreenCaptureKit marks off-screen. Unique mode still filters them out later.
         let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: false)
@@ -90,7 +91,7 @@ final class NativeWindowSource: WindowSource {
         return result
     }
 
-    func focusedFrame(_ app: TargetApp, pid: Int32) throws -> CGRect {
+    public func focusedFrame(_ app: TargetApp, pid: Int32) throws -> CGRect {
         guard AXIsProcessTrusted() else { throw OCRFailure.accessibilityRequired }
         let root = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(root, 0.12)
@@ -120,7 +121,7 @@ final class NativeWindowSource: WindowSource {
         return CGRect(origin: point, size: dimensions)
     }
 
-    func capture(_ candidate: CaptureWindow, plan: ImagePlan) async throws -> CGImage {
+    public func capture(_ candidate: CaptureWindow, plan: ImagePlan) async throws -> CGImage {
         guard CGPreflightScreenCaptureAccess(),
               let app = TargetApp.allCases.first(where: { $0.bundleID == candidate.bundleID }),
               familyMembers(app, rootPid: candidate.pid)[candidate.ownerPid] == candidate.ownerBundleID,

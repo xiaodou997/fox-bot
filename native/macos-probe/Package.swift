@@ -6,7 +6,8 @@ let package = Package(
     platforms: [.macOS("26.0")],
     products: [
         .executable(name: "foxbot-macos-probe", targets: ["ProbeCLI"]),
-        .executable(name: "foxbot-macos-ocr", targets: ["OCRCLI"])
+        .executable(name: "foxbot-macos-ocr", targets: ["OCRCLI"]),
+        .executable(name: "foxbot-macos-draft", targets: ["DraftCLI"])
     ],
     targets: [
         .target(name: "ProbeKit"),
@@ -14,6 +15,7 @@ let package = Package(
         .testTarget(name: "ProbeKitTests", dependencies: ["ProbeKit"]),
         .target(name: "OCRKit", dependencies: ["ProbeKit"]),
         .executableTarget(name: "OCRCLI", dependencies: ["OCRKit", "ProbeKit"]),
+        .executableTarget(name: "DraftCLI", dependencies: ["OCRKit", "ProbeKit"]),
         .testTarget(name: "OCRKitTests", dependencies: ["OCRKit", "ProbeKit"])
     ]
 )

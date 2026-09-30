@@ -1,9 +1,9 @@
 # FoxBot 适配能力矩阵
 
 - 编号：FB-MATRIX-001
-- 日期：2026-09-28
+- 日期：2026-10-01
 - 适用设计：[FB-BASELINE-001](../design/BASELINE.md)
-- 状态：完整聊天适配器仍未实现/未验收；macOS 微信 current-session 的 G2 只读链已完成真实 Freeze，但草稿、回填、发送、导航与恢复仍需 G3/G4 独立验收。上游源码只能作为路径参考。
+- 状态：完整聊天适配器仍未实现/未验收；macOS 微信 current-session 的 G2 只读链已完成真实 Freeze，G3a 已取得测试级真实 draft fill / OCR verify 证据，但 C05 仍为 heuristic，发送、导航与恢复继续独立验收。上游源码只能作为路径参考。
 - 来源：[固定提交与审计记录](../references/UPSTREAM_AUDIT.md)
 
 ## 1. 状态语义
@@ -28,7 +28,7 @@
 | AD-QQ | Android / QQ | PRIMARY | 无障碍 resource-id / text；气泡布局用于方向解析 | ACTION_SET_TEXT / 粘贴回填，不发送 | PLANNED；NOT_RUN |
 | AD-X | Android / X 私信 | PRIMARY | Compose 节点 contentDescription 解析 | 通用输入框回填，不发送 | PLANNED；NOT_RUN |
 | AD-FS | Android / 飞书 | PRIMARY | 无障碍气泡矩形/状态＋本地 ML Kit OCR | 通用输入框回填，不发送 | PLANNED；NOT_RUN |
-| MC-WX | macOS / 微信 | PRIMARY | CaptureApp → 窗口截图与 Apple Vision 路径 | fill_text 回填，不发送 | G2 READ FREEZE；C05～C10 NOT_RUN |
+| MC-WX | macOS / 微信 | PRIMARY | CaptureApp → 窗口截图与 Apple Vision 路径 | CGEvent Unicode 测试回填，不发送 | G2 READ FREEZE；G3a C06 REAL PASS (TEST ONLY)；C05 HEURISTIC；C07～C10 NOT_RUN |
 | MC-QQ | macOS / QQ | PRIMARY | AXApp → AX 文本/类属性解析 | AX 设值及输入事件降级；不发送 | PLANNED；NOT_RUN |
 | WIN-WX | Windows / 微信 | PRIMARY | 上游 README 描述 WGC＋RapidOCR | app/fill.py 坐标定位＋剪贴板粘贴；不发送 | PLANNED；NOT_RUN |
 | AD-WX | Android / 微信 | PROBE_ONLY | 上游主动禁用微信入口；旧适配代码仍保留 | 不可据此宣称能够采集、回填或发送 | PLANNED；NOT_RUN；自动发送关闭 |
@@ -214,3 +214,15 @@ known_gaps:
 | MC-WX readiness | SUPERSEDED BY G2 FREEZE | 早期 readiness 仍保留为历史回执；最终真实 Observation 已 PASS | 见 2026-09-30 G2 Freeze 回执 |
 
 [真实验收工作流](../development/G2D_REAL_ACCEPTANCE.md)、[readiness 回执](../acceptance/receipts/2026-09-29-g2d-real-readiness.md)和[G2 Freeze 回执](../acceptance/receipts/2026-09-30-g2-freeze.md)记录完整证据。G2 真实读取链已 Freeze；C05 draft_read / C06 fill 从 G3a 起单独验收。
+
+### G3a Draft Writer（测试级真实回填；发送仍关闭）
+
+| 对象 | 实现 | 本轮状态 | 未覆盖 / 限制 |
+| --- | --- | --- | --- |
+| 微信 AX 编辑器语义 | PROBED / NOT AVAILABLE | 当前微信 4.1.13 focused window 只暴露约 5 个 AX 节点；无 AXTextArea / AXTextField、无 settable AXValue、点击输入区后也没有 AXFocusedUIElement | 不能用 AXValue 精确读取/写草稿 |
+| C05 draft_read | IMPLEMENTED / HEURISTIC | 输入区局部 Vision 可识别可见草稿；已知空输入占位文案会排除；OCR partial 记 UNREADABLE；真实已有草稿返回 NONEMPTY 并拒绝覆盖 | 不能可靠检测 IME 组字、隐藏/不可见草稿；因此不标 C05 ACCEPTED |
+| C06 fill | IMPLEMENTED / REAL PASS / TEST ONLY | 独立 `foxbot-macos-draft`：要求微信系统前台、唯一 focused window、exact conversation fingerprint、显式 `--allow-heuristic-empty-test`；空草稿时写入唯一测试文本并 OCR 回读完全匹配 | 生产自动模式仍关闭；布局/主题/IME/用户并发输入需扩展验收 |
+| 已有草稿保护 | REAL PASS | 真实 NONEMPTY 草稿下返回 `DRAFT_NOT_EMPTY_OR_UNREADABLE`，`write_attempted=false`，`send_attempted=false` | 只证明可见 OCR 草稿 |
+| 发送动作 | NOT IMPLEMENTED | report 固定 `send_attempted=false`；代码无 Enter/点击发送路径 | C07/C08 全部留给 G3b/G3c |
+
+[G3a 说明](../development/G3A_DRAFT_WRITER.md)和[真实回执](../acceptance/receipts/2026-10-01-g3a-draft-writer.md)记录本轮真机证据。G3a PASS 只表示受限测试条件下可安全回填并回读，不提升 AUTO_REPLY。

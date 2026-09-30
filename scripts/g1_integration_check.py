@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Run bounded G1 gates with exact checkout fingerprints. No native chat reads or Keychain writes."""
+"""Run bounded integration gates with exact checkout fingerprints.
+
+The optional macOS step compiles/tests native targets only. It never queries real chat apps,
+performs draft writes, sends input, or mutates Keychain/TCC state.
+"""
 from __future__ import annotations
 import argparse
 import hashlib
@@ -34,7 +38,7 @@ def fingerprint():
     return digest.hexdigest()
 
 
-TEST_MINIMUMS = {"rust-tests": 131, "cipher-disabled": 1, "python-tests": 61, "swift-tests": 84}
+TEST_MINIMUMS = {"rust-tests": 131, "cipher-disabled": 1, "python-tests": 61, "swift-tests": 89}
 
 
 def executed_tests(label, log):
@@ -80,7 +84,8 @@ def run_step(label, command, directory, timeout=600):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--with-macos-probe", action="store_true", help="build/test the read-only probe; never query real apps")
+    parser.add_argument("--with-macos-probe", action="store_true",
+                        help="build/test macOS native targets; tests never query or write real apps")
     args = parser.parse_args()
     cargo = shutil.which("cargo") or str(Path.home() / ".cargo/bin/cargo")
     if not Path(cargo).is_file():
