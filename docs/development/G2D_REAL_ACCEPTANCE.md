@@ -198,6 +198,8 @@ repeat.observations    = 0
 
 引用回复实测中，回复正文与引用块同方向、左对齐，引用首行形如“名字：被引用内容”，与上方正文间距约 0.016，且引用块明显更窄。parser 仅在该几何与文本条件同时满足时将引用块折入上一条消息上下文；普通带冒号的宽消息仍保持独立。真实 reference-v4 已验证引用块合并正确且旁边普通带冒号消息不被误合并。
 
+真实 verify 还暴露出会话类型绑定风险：一次 baseline 实际停留在群聊，但命令传入了 `private`。现在 private baseline 只要 snapshot 中出现 sender fingerprint 就 fail-closed；group baseline 则继续要求所有 incoming 都具备 sender fingerprint。这样错误的群聊→私聊绑定不会写入 baseline/config。
+
 ## 8. 下一步
 
 现在代码侧已经准备好。真实 G2d 剩余工作是测试人员本机完成：

@@ -289,6 +289,14 @@ pub fn prepare_baseline(
     {
         return Err(HostError::Untrusted);
     }
+    if kind == ConversationKind::Private
+        && snapshot
+            .messages
+            .iter()
+            .any(|message| message.sender_fingerprint.is_some())
+    {
+        return Err(HostError::Untrusted);
+    }
     let directory = session_directory(session)?;
     let mut binding = Binding::paused(ConversationKey {
         device: "local-macos".into(),
@@ -520,6 +528,27 @@ mod tests {
     }
 
     #[test]
+    fn private_baseline_refuses_group_sender_identity() {
+        let snap = snapshot();
+        assert!(
+            snap.messages
+                .iter()
+                .any(|message| message.sender_fingerprint.is_some())
+        );
+        assert!(matches!(
+            prepare_baseline(
+                "unit-private-group-mismatch",
+                acceptance(),
+                &snap,
+                "acct",
+                "conv",
+                ConversationKind::Private
+            ),
+            Err(HostError::Untrusted)
+        ));
+    }
+
+    #[test]
     fn private_capture_never_self_approves_observed_messages() {
         let session = unique_session("capture");
         let directory = session_directory(&session).unwrap();
@@ -549,7 +578,10 @@ mod tests {
     #[test]
     fn accepted_private_workflow_baselines_and_verifies_exactly_one_new_incoming() {
         let session = unique_session("verify");
-        let baseline = snapshot();
+        let mut baseline = snapshot();
+        for message in &mut baseline.messages {
+            message.sender_fingerprint = None;
+        }
         prepare_baseline(
             &session,
             acceptance(),
@@ -563,7 +595,7 @@ mod tests {
         current.messages.push(PrivateBridgeMessage {
             text: "NEW".into(),
             direction: PrivateDirection::Them,
-            sender_fingerprint: Some("b".repeat(64)),
+            sender_fingerprint: None,
             complete: true,
         });
         let report = verify_current(&session, &current).unwrap();

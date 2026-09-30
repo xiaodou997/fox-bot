@@ -34,7 +34,7 @@ def fingerprint():
     return digest.hexdigest()
 
 
-TEST_MINIMUMS = {"rust-tests": 126, "cipher-disabled": 1, "python-tests": 61, "swift-tests": 83}
+TEST_MINIMUMS = {"rust-tests": 127, "cipher-disabled": 1, "python-tests": 61, "swift-tests": 83}
 
 
 def executed_tests(label, log):
