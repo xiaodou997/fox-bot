@@ -41,6 +41,28 @@ final class MessageParserTests: XCTestCase {
         XCTAssertTrue(result.partialReasons.contains("HEURISTIC_REGION"))
     }
 
+    func testDateSeparatorsAndCallSystemEventsAreExcludedConservatively() {
+        let snapshot = parserSnapshot([
+            parserLine("2025年12月6日 20:17", 0.54, 0.20),
+            parserLine("星期一 11:49", 0.54, 0.24),
+            parserLine("通话时长00:06 9", 0.70, 0.28),
+            parserLine("对方已拒绝风", 0.70, 0.32),
+            parserLine("已取消の", 0.70, 0.36),
+            parserLine("• 已在其它设备拒绝", 0.40, 0.40),
+            parserLine("我说对方已拒绝我", 0.40, 0.48),
+            parserLine("已取消订单", 0.40, 0.54),
+            parserLine("通话时长00:06后继续聊", 0.40, 0.60),
+        ])
+        let result = WeChatMessageParser.parse(snapshot)
+        XCTAssertEqual(result.messages.count, 1)
+        XCTAssertEqual(result.messages[0].lines, [
+            "我说对方已拒绝我",
+            "已取消订单",
+            "通话时长00:06后继续聊",
+        ])
+        XCTAssertFalse(result.messages.contains { $0.direction == .unknown })
+    }
+
     func testMultilineMessageFoldsOnlyWhenAlignedAndCompatible() {
         let snapshot = parserSnapshot([
             parserLine("第一行", 0.40, 0.30, 0.20, 0.03),

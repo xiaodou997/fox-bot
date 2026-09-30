@@ -73,6 +73,26 @@ public enum WeChatMessageParser {
         if value.range(of: #"^\d{1,2}:\d{2}(:\d{2})?$"#, options: .regularExpression) != nil {
             return true
         }
+        let separators = [
+            #"^\d{4}年\d{1,2}月\d{1,2}日\s*\d{1,2}:\d{2}$"#,
+            #"^星期[一二三四五六日天]\s*\d{1,2}:\d{2}$"#,
+        ]
+        if separators.contains(where: {
+            value.range(of: $0, options: .regularExpression) != nil
+        }) {
+            return true
+        }
+        let callEvents = [
+            #"^通话时长\s*\d{1,2}:\d{2}\s*[0-9～~]?$"#,
+            #"^对方已拒绝[9～~风一]?$"#,
+            #"^已取消[9の～~]?$"#,
+            #"^[•へ]?\s*已在其它设备拒绝$"#,
+        ]
+        if callEvents.contains(where: {
+            value.range(of: $0, options: .regularExpression) != nil
+        }) {
+            return true
+        }
         let exact: Set<String> = ["搜索", "发送", "拖入文件", "按住说话", "输入文字", "语音输入文字"]
         return exact.contains(value)
     }
