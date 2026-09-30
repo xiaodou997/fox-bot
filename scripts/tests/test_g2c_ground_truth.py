@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from g2c_ground_truth import edit_distance, evaluate
+from g2c_ground_truth import edit_distance, evaluate, normalize_text
 
 
 def message(text, direction="THEM", sender=True):
@@ -91,6 +91,12 @@ class GroundTruthTests(unittest.TestCase):
         self.assertEqual(edit_distance("abc", "ab"), 1)
         self.assertEqual(edit_distance("abc", "abcd"), 1)
         self.assertEqual(edit_distance("abc", "axc"), 1)
+
+    def test_normalization_ignores_han_ascii_boundary_spacing_only(self):
+        self.assertEqual(normalize_text("私聊最终 B456 正常"), "私聊最终B456正常")
+        self.assertEqual(normalize_text("私聊最终B456正常"), "私聊最终B456正常")
+        self.assertEqual(normalize_text("Mixed  Test"), "Mixed Test")
+        self.assertNotEqual(normalize_text("Mixed Test"), normalize_text("MixedTest"))
 
 
 if __name__ == "__main__":

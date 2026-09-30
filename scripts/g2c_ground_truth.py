@@ -5,6 +5,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import re
 import sys
 import unicodedata
 
@@ -16,7 +17,16 @@ MAX_FILE_BYTES = 1_048_576
 
 
 def normalize_text(value: str) -> str:
-    return unicodedata.normalize("NFC", value.replace("\r\n", "\n").replace("\r", "\n")).strip()
+    normalized = unicodedata.normalize(
+        "NFC", value.replace("\r\n", "\n").replace("\r", "\n")
+    ).strip()
+    normalized = re.sub(r"[\t ]+", " ", normalized)
+    # Chinese UI/chat typography often inserts or drops a visual space at a Han↔ASCII
+    # boundary. Treat that spacing as layout noise, while preserving ASCII-internal
+    # spaces such as "Mixed Test".
+    normalized = re.sub(r"(?<=[\u3400-\u9fff]) (?=[A-Za-z0-9])", "", normalized)
+    normalized = re.sub(r"(?<=[A-Za-z0-9]) (?=[\u3400-\u9fff])", "", normalized)
+    return normalized
 
 
 def edit_distance(expected: str, observed: str) -> int:

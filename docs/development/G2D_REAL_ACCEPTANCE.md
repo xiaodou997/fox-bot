@@ -96,7 +96,7 @@ python3 scripts/g2d_ground_truth.py g2d-test
 - direction error = 0；
 - sender error = 0；
 - message-count error = 0；
-- 字符级文本错误率（CER）≤ 2%。CER 使用规范化文本后的 Levenshtein 编辑距离 / expected 字符总数计算；内部空格等单字符 OCR 偏差按实际字符编辑计数，而不是把整条消息算作一个文本错误。
+- 字符级文本错误率（CER）≤ 2%。CER 使用规范化文本后的 Levenshtein 编辑距离 / expected 字符总数计算。规范化包含 NFC、换行统一、连续水平空白折叠，并忽略中文 Han 字符与 ASCII 字母/数字边界上的可选排版空格；英文内部空格（如 `Mixed Test`）仍保留并参与误差计算。
 
 输出只含误差统计，并写：
 
