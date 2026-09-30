@@ -263,7 +263,14 @@ impl NativeObservationBridge {
         if unresolved != has_unresolved_reason {
             return Ok(BridgeOutcome::Provisional);
         }
-        let track_key = if unresolved {
+        let exact_track = (!unresolved
+            && self
+                .conversations
+                .contains_key(&snapshot.conversation_fingerprint))
+        .then(|| snapshot.conversation_fingerprint.clone());
+        let track_key = if let Some(fingerprint) = exact_track {
+            fingerprint
+        } else {
             let candidates = self
                 .conversations
                 .iter()
@@ -283,8 +290,6 @@ impl NativeObservationBridge {
                 [] => return Ok(BridgeOutcome::Provisional),
                 _ => return Ok(BridgeOutcome::Ambiguous),
             }
-        } else {
-            snapshot.conversation_fingerprint.clone()
         };
         let Some(bound) = self.conversations.get(&track_key).cloned() else {
             return Ok(BridgeOutcome::Provisional);
@@ -780,6 +785,34 @@ mod tests {
             .push(UNRESOLVED_IDENTITY_REASON.into());
         let BridgeOutcome::New(new) = bridge.bridge(&unresolved, 20).unwrap() else {
             panic!("expected continuity fallback to produce one new message")
+        };
+        assert_eq!(new.len(), 1);
+        assert_eq!(new[0].message.text.as_deref(), Some("D"));
+    }
+
+    #[test]
+    fn changed_unconfigured_title_hash_uses_unique_existing_continuity_track() {
+        let mut bridge =
+            NativeObservationBridge::new(vec![entry(ConversationKind::Private)], acceptance())
+                .unwrap();
+        let first = snapshot(vec![
+            msg("A", PrivateDirection::Me),
+            msg("B", PrivateDirection::Them),
+            msg("C", PrivateDirection::Them),
+        ]);
+        assert!(matches!(
+            bridge.bridge(&first, 10).unwrap(),
+            BridgeOutcome::Baseline(_)
+        ));
+
+        let mut changed = snapshot(vec![
+            msg("B", PrivateDirection::Them),
+            msg("C", PrivateDirection::Them),
+            msg("D", PrivateDirection::Them),
+        ]);
+        changed.conversation_fingerprint = "d".repeat(64);
+        let BridgeOutcome::New(new) = bridge.bridge(&changed, 20).unwrap() else {
+            panic!("expected title-hash drift to recover from unique continuity")
         };
         assert_eq!(new.len(), 1);
         assert_eq!(new[0].message.text.as_deref(), Some("D"));
