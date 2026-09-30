@@ -122,6 +122,41 @@ final class MessageParserTests: XCTestCase {
         XCTAssertEqual(result.messages[1].text, "下一条独立消息")
     }
 
+    func testQuotedReferenceLeadFoldsIntoReplyContext() {
+        let snapshot = parserSnapshot([
+            parserLine("这是回复正文", 0.334, 0.30, 0.44, 0.014),
+            parserLine("小豆：这是被引用的第一行", 0.334, 0.331, 0.24, 0.012),
+            parserLine("这是被引用的第二行", 0.335, 0.345, 0.22, 0.012),
+            parserLine("下一条独立消息", 0.334, 0.39, 0.22, 0.014),
+        ])
+        let result = WeChatMessageParser.parse(snapshot)
+        XCTAssertEqual(result.messages.count, 2)
+        XCTAssertEqual(
+            result.messages[0].text,
+            "这是回复正文\n小豆：这是被引用的第一行\n这是被引用的第二行"
+        )
+        XCTAssertEqual(result.messages[0].direction, .them)
+        XCTAssertEqual(result.messages[1].text, "下一条独立消息")
+    }
+
+    func testColonMessageDoesNotCrossLargeBubbleGap() {
+        let snapshot = parserSnapshot([
+            parserLine("上一条消息", 0.40, 0.30, 0.20, 0.014),
+            parserLine("小豆：普通新消息", 0.40, 0.36, 0.20, 0.014),
+        ])
+        let result = WeChatMessageParser.parse(snapshot)
+        XCTAssertEqual(result.messages.count, 2)
+    }
+
+    func testWideColonMessageDoesNotMasqueradeAsReferenceLead() {
+        let snapshot = parserSnapshot([
+            parserLine("上一条较宽的正文内容", 0.40, 0.30, 0.40, 0.014),
+            parserLine("这是一个普通说明：后面还有内容", 0.40, 0.335, 0.39, 0.014),
+        ])
+        let result = WeChatMessageParser.parse(snapshot)
+        XCTAssertEqual(result.messages.count, 2)
+    }
+
     func testGroupSenderHeaderIsAttachedButNeverSerializedInSummary() throws {
         let snapshot = parserSnapshot([
             parserLine("小明", 0.40, 0.25, 0.08, 0.018),

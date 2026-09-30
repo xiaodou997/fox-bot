@@ -108,6 +108,17 @@ public enum WeChatMessageParser {
         min(0.04, max(0.012, line.bounds.height * 1.35))
     }
 
+    private static func looksLikeReferenceLead(_ text: String) -> Bool {
+        let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let separator = value.firstIndex(where: { $0 == ":" || $0 == "：" }) else {
+            return false
+        }
+        let prefix = value[..<separator].trimmingCharacters(in: .whitespacesAndNewlines)
+        let suffix = value[value.index(after: separator)...]
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return !prefix.isEmpty && prefix.count <= 32 && !suffix.isEmpty
+    }
+
     private static func digest(_ value: String, domain: String) -> String {
         let data = Data((domain + "\0" + value).utf8)
         return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
@@ -230,7 +241,12 @@ public enum WeChatMessageParser {
                 let gap = line.bounds.minY - last.bounds.maxY
                 let aligned = abs(line.bounds.minX - last.bounds.minX) < 0.025
                 let compatible = side == last.direction || side == .unknown || last.direction == .unknown
-                if aligned && compatible && gap >= -0.005 && gap < multilineGapLimit(for: line) {
+                let regularContinuation = gap >= -0.005 && gap < multilineGapLimit(for: line)
+                let referenceContinuation = looksLikeReferenceLead(line.text)
+                    && gap >= 0
+                    && gap <= min(0.03, max(0.018, line.bounds.height * 2.0))
+                    && line.bounds.width <= last.bounds.width * 0.85
+                if aligned && compatible && (regularContinuation || referenceContinuation) {
                     var updated = last
                     messages.removeLast()
                     updated.lines.append(line.text)
