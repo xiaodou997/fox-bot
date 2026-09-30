@@ -90,7 +90,7 @@ public enum WeChatMessageParser {
         let candidates = snapshot.lines.filter {
             $0.confidence >= minimumConfidence
                 && $0.bounds.midY >= 0.015 && $0.bounds.midY < 0.10
-                && $0.bounds.minX >= 0.32 && $0.bounds.minX < 0.66
+                && $0.bounds.minX >= 0.32 && $0.bounds.minX < 0.94
                 && !isNoise($0.text)
         }.sorted {
             if abs($0.bounds.minY - $1.bounds.minY) < 0.005 { return $0.bounds.minX < $1.bounds.minX }

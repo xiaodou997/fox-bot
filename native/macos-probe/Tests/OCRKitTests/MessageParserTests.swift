@@ -103,6 +103,16 @@ final class MessageParserTests: XCTestCase {
         XCTAssertFalse(a?.contains("测试群") ?? true)
     }
 
+    func testConversationFingerprintAcceptsWideLayoutTitleNearRightSide() {
+        let snapshot = parserSnapshot([
+            parserLine("联系人名称", 0.81, 0.05, 0.11, 0.02),
+            parserLine("下一行正文", 0.82, 0.13, 0.10, 0.02)
+        ])
+        let fingerprint = WeChatMessageParser.conversationFingerprint(snapshot)
+        XCTAssertEqual(fingerprint?.count, 64)
+        XCTAssertFalse(fingerprint?.contains("联系人") ?? true)
+    }
+
     func testPrivateSnapshotRequiresHeaderIdentityAndHashesSender() throws {
         let snapshot = parserSnapshot([
             parserLine("会话名", 0.40, 0.04, 0.12, 0.03),
