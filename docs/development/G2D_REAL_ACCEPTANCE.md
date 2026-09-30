@@ -1,7 +1,7 @@
 # G2d：真实 Observation 验收工作流
 
-- 日期：2026-09-29
-- 状态：验收工具链已实现并通过合成/真实 readiness；真实 Observation PASS 仍需要专用测试会话的人工 ground-truth 和另一测试账号发送一条已知消息。
+- 日期：2026-09-30
+- 状态：**REAL PASS / G2 FREEZE**。专用测试会话已完成 6 类 ground-truth、accepted baseline 和另一测试账号单条 incoming 的真实 Runtime verify。
 - 前置：[G2d Observation Bridge](G2D_OBSERVATION_BRIDGE.md) · [G2c 会话身份](G2C_IDENTITY_HOST.md)
 - 关联：[能力矩阵](../adapters/CAPABILITY_MATRIX.md) · [readiness 回执](../acceptance/receipts/2026-09-29-g2d-real-readiness.md)
 
@@ -208,15 +208,20 @@ repeat.observations    = 0
 
 跨帧 continuity 也不能直接依赖原始 OCR 字符串完全相等：真机上同一条消息会在 Han↔ASCII 边界偶发增删排版空格。Bridge 现在保留原始 OCR 文本用于实际消息正文，同时使用独立的 continuity text 做帧间签名比较；它只折叠水平空白并忽略 Han↔ASCII 边界空格，英文内部空格等内容仍保持区分。
 
-## 8. 下一步
+## 8. 最终 Freeze 结果与下一步
 
-现在代码侧已经准备好。真实 G2d 剩余工作是测试人员本机完成：
+2026-09-30 最终 session `g2d-test` 已达到：
 
-1. 专用测试会话采 6 类 case；
-2. 人工填写 expected；
-3. acceptance 通过；
-4. baseline；
-5. 另一账号发送一条已知 incoming；
-6. real verify PASS。
+- 6 canonical case / 60 条 expected；
+- required tags 全覆盖；
+- direction / sender / message-count error = 0；
+- CER = 2 / 2638，约 0.08%；
+- acceptance=true；
+- 正确 private baseline 11 条；
+- 另一测试账号新增 1 条 incoming；
+- `current = NEW / observations=1 / queued=1`；
+- 同一 current 重读为 `NO_CHANGE / observations=0`；
+- Runtime tasks / ready / unresolved sends 均为 0；
+- 无模型请求、无原生写入、无发送动作。
 
-这一步完成后，才可以把 G2 真实读取链标为 Freeze 候选；G3 写入/发送仍是独立门禁。
+因此 G2 current-session 真实读取链正式 Freeze。下一阶段为 G3a Draft Writer：C05 draft_read + C06 fill，只允许安全回填和回读验证，发送动作继续关闭。

@@ -1,9 +1,9 @@
 # FoxBot 设计基线 v0.1
 
 - 文档编号：FB-BASELINE-001
-- 日期：2026-09-28
+- 日期：2026-09-30
 - 性质：实现前设计基线，不是产品 v0.1 发布或功能冻结声明。
-- 当前实现：G1a～G1c、G2a/G2b/G2c 之上已加入[G2d Observation Bridge](../development/G2D_OBSERVATION_BRIDGE.md)与[真实验收工作流](../development/G2D_REAL_ACCEPTANCE.md)。合成可信快照已实际进入 Runtime::ingest；真实微信固定提交 readiness 也能稳定私有采样，但 expected 不自动生成、acceptance 仍为 false，因此真实 Observation ingest 继续 BLOCKED。真实发送未验收。
+- 当前实现：G1a～G1c、G2a～G2d 已完成；macOS 微信 current-session 真实读取链已于 2026-09-30 Freeze。真实 ground-truth 覆盖 private/group/duplicate_text/numeric/multiline/reference 共 6 case / 60 条 expected，acceptance=true；正确私聊 baseline 后一条真实 incoming 被 Runtime 唯一识别为 NEW / queued=1，重复读取为 NO_CHANGE。G2 仍不包含草稿写入、点击发送或发送结果验证；G3 写入/发送继续独立门禁。
 - 关联：[文档导航](../README.md) · [适配矩阵](../adapters/CAPABILITY_MATRIX.md) · [验收清单](../acceptance/ACCEPTANCE_CHECKLIST.md) · [来源审计](../references/UPSTREAM_AUDIT.md)
 
 ## 1. 已确定的目标与约束
@@ -249,7 +249,7 @@ AI 请求只发送配置允许的消息与上下文；默认不上传截图。�
 | --- | --- | --- |
 | G0 文档基线 | 本基线、矩阵、清单、模板、来源与导航 | 文档一致且链接有效；不表示运行能力已实现。 |
 | G1 模拟闭环 | Runtime、持久化、模拟消息/回复/发送通道 | 用故障注入证明隔离、去重、过期处理与恢复；不触碰真实聊天。 |
-| G2 平台探针 | Android 与桌面采集、身份、草稿、OCR、通知能力报告 | 逐软件/版本记录可读可写条件；只读探测不证明可发送。 |
+| G2 平台探针 | Android 与桌面采集、身份、草稿、OCR、通知能力报告 | 指定组合逐项记录真实能力；MC-WX current-session 只读链已有 Freeze 回执，但只读探测不证明可写/可发送。 |
 | G3 当前会话自动收发 | 经授权测试会话的完整自动闭环 | 逐组合验证读、填、发、回执和异常；暂不声称多会话值守。 |
 | G4 多会话值守 | 新消息发现、导航、队列、人工让权与多会话对账 | 不串会话、不补发旧历史、不因前台变化误写。 |
 | G5 候选发布 | 平台包、升级、权限、资源与持续运行回执 | 按明确组合发布支持范围；未验收能力关闭或标记实验。 |

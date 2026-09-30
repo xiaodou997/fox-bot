@@ -3,7 +3,7 @@
 - 编号：FB-MATRIX-001
 - 日期：2026-09-28
 - 适用设计：[FB-BASELINE-001](../design/BASELINE.md)
-- 状态：完整聊天适配器仍未实现/未验收；已有独立G2a macOS只读可读性探针，不能将其等同于消息收发适配。上游源码只能作为路径参考。
+- 状态：完整聊天适配器仍未实现/未验收；macOS 微信 current-session 的 G2 只读链已完成真实 Freeze，但草稿、回填、发送、导航与恢复仍需 G3/G4 独立验收。上游源码只能作为路径参考。
 - 来源：[固定提交与审计记录](../references/UPSTREAM_AUDIT.md)
 
 ## 1. 状态语义
@@ -28,7 +28,7 @@
 | AD-QQ | Android / QQ | PRIMARY | 无障碍 resource-id / text；气泡布局用于方向解析 | ACTION_SET_TEXT / 粘贴回填，不发送 | PLANNED；NOT_RUN |
 | AD-X | Android / X 私信 | PRIMARY | Compose 节点 contentDescription 解析 | 通用输入框回填，不发送 | PLANNED；NOT_RUN |
 | AD-FS | Android / 飞书 | PRIMARY | 无障碍气泡矩形/状态＋本地 ML Kit OCR | 通用输入框回填，不发送 | PLANNED；NOT_RUN |
-| MC-WX | macOS / 微信 | PRIMARY | CaptureApp → 窗口截图与 Apple Vision 路径 | fill_text 回填，不发送 | PLANNED；NOT_RUN |
+| MC-WX | macOS / 微信 | PRIMARY | CaptureApp → 窗口截图与 Apple Vision 路径 | fill_text 回填，不发送 | G2 READ FREEZE；C05～C10 NOT_RUN |
 | MC-QQ | macOS / QQ | PRIMARY | AXApp → AX 文本/类属性解析 | AX 设值及输入事件降级；不发送 | PLANNED；NOT_RUN |
 | WIN-WX | Windows / 微信 | PRIMARY | 上游 README 描述 WGC＋RapidOCR | app/fill.py 坐标定位＋剪贴板粘贴；不发送 | PLANNED；NOT_RUN |
 | AD-WX | Android / 微信 | PROBE_ONLY | 上游主动禁用微信入口；旧适配代码仍保留 | 不可据此宣称能够采集、回填或发送 | PLANNED；NOT_RUN；自动发送关闭 |
@@ -185,9 +185,9 @@ known_gaps:
 | 应用运行会话 | IMPLEMENTED | bundle + launch time 本地 SHA-256；进程重启后旧 binding 变 PROVISIONAL | 同进程内登出/换号尚无自动系统信号，需显式 invalidate/rebind |
 | 会话身份 | IMPLEMENTED | 标题仅作 SHA-256 视觉指纹；必须用户显式映射到稳定 account/conversation Binding；同指纹重复配置拒绝 | 同名会话仍依赖至少两条消息连续性和显式绑定，不能把标题当原生 ID |
 | 跨帧消息跟踪 | IMPLEMENTED | 首帧 historical baseline；≥2 条 suffix/prefix 连续后只生成新增 Observation；重复“好的”可作为独立消息 | 滚动跨度过大/无重叠返回 AMBIGUOUS，不猜测 |
-| Ground truth | FRAMEWORK PASS / REAL NOT RUN | 私有标注文件仅允许在 target/g2c-groundtruth；6场景≥24条，覆盖 private/group/duplicate/numeric/multiline/reference | 真实微信专用测试会话尚未人工标注，因此没有 accepted 记录 |
+| Ground truth | REAL PASS | 私有标注文件仅允许在 target/g2d-real；最终 6 canonical case / 60 条 expected，覆盖 private/group/duplicate/numeric/multiline/reference；direction/sender/count error=0，CER≈0.08% | 仅针对本次测试环境和已冻结 parser/规则 |
 | Rust worker host | IMPLEMENTED / LOCAL PASS | starts paused；resume warmup；pause 结束 worker；崩溃后下一读重启预热；有界队列返回 backpressure；reader 线程受管 | 尚未并入长期生产调度 tick |
-| MC-WX Rust 只读探针 | LOCAL PASS | 连续两读应用会话与会话指纹稳定，私有快照已收到；公开输出无正文/哈希值 | Observation 固定 PROVISIONAL，直到真实 GT + 显式 Binding |
+| MC-WX Rust 只读探针 | REAL PASS | 真实 acceptance=true；显式 Binding + baseline 后另一测试账号新增 1 条 incoming，Runtime NEW / queued=1；重复读取 NO_CHANGE；公开输出无正文/哈希值 | 仅 current-session read；写入/发送仍关闭 |
 
 [G2c说明](../development/G2C_IDENTITY_HOST.md)记录门禁细节。G2c 没有新增任何原生写入/点击/发送能力。
 
@@ -195,11 +195,11 @@ known_gaps:
 
 | 对象 | 实现 | 本轮状态 | 未覆盖 |
 | --- | --- | --- | --- |
-| Snapshot → Runtime | IMPLEMENTED / SYNTHETIC PASS | baseline 3 条、下一帧 1 条 queued、重放 NO_CHANGE；Runtime messages=4，tasks/ready/send=0 | 真实微信没有 accepted GT + Binding |
+| Snapshot → Runtime | IMPLEMENTED / REAL PASS | 真实 baseline 11 条；当前帧唯一新增 1 条 queued；重放 NO_CHANGE；runtime messages=12，tasks/ready/unresolved_send=0 | 不代表 draft/fill/send 已实现 |
 | 游标提交 | IMPLEMENTED / PASS | Runtime 全部接收后才提交 bridge cursor；失败时可重试相同 canonical IDs | 跨进程持久化 bridge cursor 尚未设计 |
 | Backpressure 恢复 | IMPLEMENTED / PASS | 中途失败后已写 prefix 在重试中为 Duplicate，后缀不丢失 | 生产背压策略仍由宿主调度决定 |
 | PROVISIONAL / AMBIGUOUS | IMPLEMENTED / PASS | 不调用 Runtime::ingest，不产生消息 | 无 |
-| MC-WX 真实 Observation | BLOCKED | 后续真实读取出现 TARGET_CHANGED / NO_ELIGIBLE_WINDOW，并且缺真实 GT/Binding | 专用测试会话人工验收 |
+| MC-WX 真实 Observation | REAL PASS / G2 FREEZE | 6 case / 60 条 accepted GT；正确 private baseline；另一账号真实 incoming 触发 NEW / queued=1；repeat NO_CHANGE | 仅当前会话只读链；G3 写入和发送独立验收 |
 
 [G2d说明](../development/G2D_OBSERVATION_BRIDGE.md)和[回执](../acceptance/receipts/2026-09-29-g2d-observation-bridge.md)记录固定提交证据。G2d 没有调用 AI，也没有增加聊天写入/发送能力。
 
@@ -207,10 +207,10 @@ known_gaps:
 
 | 对象 | 实现 | 本轮状态 | 未覆盖 |
 | --- | --- | --- | --- |
-| 私有 case 采样 | IMPLEMENTED / LOCAL PASS | 连续两读稳定才写 `target/g2d-real/<session>`；observed 写入、expected 默认空；公开输出无正文 | 仍需专用测试会话采 6 类真实 case |
-| Ground-truth evaluator | IMPLEMENTED / PASS | acceptance 文件 0600；6 case / 24 条合成数据可通过；readiness expected 为空时 accepted=false | 真实 expected 尚未人工填写 |
-| Baseline preflight | IMPLEMENTED / PASS | accepted=false 时在启动 OCR worker 前返回 Untrusted | 真实 accepted GT 尚不存在 |
-| Real verify Runtime | IMPLEMENTED / SYNTHETIC PASS | 随机 SQLCipher key、临时 Runtime、单条 incoming queued=1、重读 NO_CHANGE、key zeroize、目录删除 | 真实 incoming 尚未执行 |
-| MC-WX readiness | LOCAL PASS | 固定提交真实微信两读稳定，9 条 observed，私有文件权限 0600 | readiness tag 不计 ground-truth；真实 Observation 仍 BLOCKED |
+| 私有 case 采样 | IMPLEMENTED / REAL PASS | 连续两读稳定才写 `target/g2d-real/<session>`；最终 6 个 canonical case 完成 | 私有正文仍只保留本机 ignored 目录 |
+| Ground-truth evaluator | IMPLEMENTED / REAL PASS | 6 case / 60 条；direction/sender/count error=0；字符级 CER≈0.08%；acceptance=true | 只对冻结测试样本和环境成立 |
+| Baseline preflight | IMPLEMENTED / REAL PASS | accepted=false 会在 worker 前拒绝；accepted=true 后 private baseline 额外拒绝 group sender evidence / unresolved identity | baseline 不是发送授权 |
+| Real verify Runtime | IMPLEMENTED / REAL PASS | 随机 SQLCipher Runtime；真实 baseline 11 条；单条 incoming queued=1；重读 NO_CHANGE；key zeroize、临时目录删除 | 未调用 ReplyProvider / fill / send |
+| MC-WX readiness | SUPERSEDED BY G2 FREEZE | 早期 readiness 仍保留为历史回执；最终真实 Observation 已 PASS | 见 2026-09-30 G2 Freeze 回执 |
 
-[真实验收工作流](../development/G2D_REAL_ACCEPTANCE.md)与[readiness 回执](../acceptance/receipts/2026-09-29-g2d-real-readiness.md)记录完整步骤。只有人工 ground-truth + 显式 Binding + 一条已知外部 incoming 的 real verify PASS 后，G2 真实读取链才可进入 Freeze 候选。
+[真实验收工作流](../development/G2D_REAL_ACCEPTANCE.md)、[readiness 回执](../acceptance/receipts/2026-09-29-g2d-real-readiness.md)和[G2 Freeze 回执](../acceptance/receipts/2026-09-30-g2-freeze.md)记录完整证据。G2 真实读取链已 Freeze；C05 draft_read / C06 fill 从 G3a 起单独验收。
