@@ -276,6 +276,14 @@ pub fn prepare_baseline(
     }
     if snapshot.strategy != acceptance.strategy
         || snapshot
+            .conversation_fingerprint
+            .bytes()
+            .all(|value| value == b'0')
+        || snapshot
+            .partial_reasons
+            .iter()
+            .any(|value| value == "CONVERSATION_IDENTITY_UNRESOLVED")
+        || snapshot
             .messages
             .iter()
             .any(|message| message.direction == PrivateDirection::Unknown || !message.complete)
@@ -513,12 +521,29 @@ mod tests {
     fn baseline_refuses_unknown_direction_before_writing_bridge_config() {
         let mut snap = snapshot();
         snap.messages[0].direction = PrivateDirection::Unknown;
-        let acceptance = acceptance();
+        let accepted = acceptance();
         assert!(matches!(
             prepare_baseline(
                 "unit",
-                acceptance,
+                accepted,
                 &snap,
+                "acct",
+                "conv",
+                ConversationKind::Private
+            ),
+            Err(HostError::Untrusted)
+        ));
+
+        let mut unresolved = snapshot();
+        unresolved.conversation_fingerprint = "0".repeat(64);
+        unresolved
+            .partial_reasons
+            .push("CONVERSATION_IDENTITY_UNRESOLVED".into());
+        assert!(matches!(
+            prepare_baseline(
+                "unit-unresolved",
+                acceptance(),
+                &unresolved,
                 "acct",
                 "conv",
                 ConversationKind::Private

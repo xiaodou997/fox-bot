@@ -29,7 +29,7 @@ final class MessageParserTests: XCTestCase {
 
     func testReadRegionIncludesTopTitleWhileChatRegionExcludesHeader() {
         XCTAssertEqual(WeChatMessageParser.readRegion.minY, 0.0)
-        XCTAssertLessThanOrEqual(WeChatMessageParser.readRegion.minX, 0.275)
+        XCTAssertLessThanOrEqual(WeChatMessageParser.readRegion.minX, 0.26)
         XCTAssertEqual(WeChatMessageParser.chatRegion.minY, 0.10)
     }
 
@@ -208,7 +208,7 @@ final class MessageParserTests: XCTestCase {
 
     func testConversationFingerprintAcceptsWideLayoutTitleNearRightSide() {
         let snapshot = parserSnapshot([
-            parserLine("联系人名称", 0.81, 0.05, 0.11, 0.02),
+            parserLine("联系人名称", 0.81, 0.025, 0.11, 0.02),
             parserLine("下一行正文", 0.82, 0.13, 0.10, 0.02)
         ])
         let fingerprint = WeChatMessageParser.conversationFingerprint(snapshot)
@@ -230,11 +230,11 @@ final class MessageParserTests: XCTestCase {
 
     func testConversationFingerprintDoesNotAbsorbLowerHeaderNoise() {
         let clean = parserSnapshot([
-            parserLine("科技小豆", 0.2700, 0.0194, 0.0460, 0.0150)
+            parserLine("科技小豆", 0.26996, 0.01938, 0.04598, 0.01497)
         ])
         let noisy = parserSnapshot([
-            parserLine("科技小豆", 0.2700, 0.0194, 0.0460, 0.0150),
-            parserLine("标题下方其它文字", 0.3235, 0.0486, 0.2623, 0.0101)
+            parserLine("科技小豆", 0.26996, 0.01938, 0.04598, 0.01497),
+            parserLine("标题下方其它文字", 0.32355, 0.04865, 0.26228, 0.01011)
         ])
         XCTAssertEqual(
             WeChatMessageParser.conversationFingerprint(noisy),
@@ -259,8 +259,12 @@ final class MessageParserTests: XCTestCase {
         XCTAssertFalse(data.contains("会话名"))
 
         let noHeader = parserSnapshot([parserLine("正文", 0.40, 0.30)])
-        XCTAssertNil(WeChatMessageParser.privateSnapshot(
+        let unresolved = try XCTUnwrap(WeChatMessageParser.privateSnapshot(
             noHeader, applicationSessionFingerprint: String(repeating: "c", count: 64)))
+        XCTAssertEqual(unresolved.conversationFingerprint,
+                       WeChatMessageParser.unresolvedConversationFingerprint)
+        XCTAssertTrue(unresolved.partialReasons.contains("CONVERSATION_IDENTITY_UNRESOLVED"))
+        XCTAssertEqual(unresolved.messages.map(\.text), ["正文"])
     }
 
     func testApplicationSessionFingerprintIsStableWithinLaunchAndChangesAcrossLaunch() {

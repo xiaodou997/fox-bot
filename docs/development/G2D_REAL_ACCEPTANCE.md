@@ -202,6 +202,10 @@ repeat.observations    = 0
 
 同一轮真机验证还发现 conversation fingerprint 会被标题下方约 0.03 高度内的其它 OCR 行污染，导致同一个“科技小豆”私聊在同一进程内产生不同 hash。标题拼接现在只接收与首个标题片段垂直中心接近、且阈值受标题文字高度约束的片段；真实“科技小豆”稳定回到此前 private canonical capture 的同一 fingerprint。
 
+后续复测进一步定位到标题左边缘会抖到 x≈0.26996，旧的 x>=0.27 刚好把真实标题排除，继而让 y≈0.04865 的下方文本冒充标题。身份读取 ROI 现放宽到 x=0.26，但标题候选同时收紧为 minY<0.045；消息正文仍坚持 chatRegion x>=0.32，因此扩大身份读取区不会把侧栏文本当成聊天消息。
+
+标题 OCR 仍可能在单帧完全漏读。此时 worker 不再失败或拿其它文字伪造 identity，而是返回保留的全零 unresolved conversation fingerprint，并附加 `CONVERSATION_IDENTITY_UNRESOLVED`。Baseline 创建始终拒绝 unresolved identity；运行时只有在同一 application-session 已存在唯一绑定 track、且当前消息与该 track 至少有 2 条连续重叠时，bridge 才允许通过 continuity 恢复 binding。无候选或多候选都保持 fail-closed。
+
 跨帧 continuity 也不能直接依赖原始 OCR 字符串完全相等：真机上同一条消息会在 Han↔ASCII 边界偶发增删排版空格。Bridge 现在保留原始 OCR 文本用于实际消息正文，同时使用独立的 continuity text 做帧间签名比较；它只折叠水平空白并忽略 Han↔ASCII 边界空格，英文内部空格等内容仍保持区分。
 
 ## 8. 下一步

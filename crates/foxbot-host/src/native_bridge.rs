@@ -8,6 +8,7 @@ use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 
 const SNAPSHOT_SCHEMA: &str = "foxbot.private-message-snapshot.v1";
+const UNRESOLVED_IDENTITY_REASON: &str = "CONVERSATION_IDENTITY_UNRESOLVED";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -117,6 +118,7 @@ impl NativeConversationBinding {
         if snapshot.schema_version != SNAPSHOT_SCHEMA
             || !is_hex64(&snapshot.application_session_fingerprint)
             || !is_hex64(&snapshot.conversation_fingerprint)
+            || is_unresolved_conversation_fingerprint(&snapshot.conversation_fingerprint)
         {
             return Err(HostError::Untrusted);
         }
@@ -206,6 +208,7 @@ impl NativeObservationBridge {
             entry.binding.validate().map_err(|_| HostError::Config)?;
             if !is_hex64(&entry.application_session_fingerprint)
                 || !is_hex64(&entry.conversation_fingerprint)
+                || is_unresolved_conversation_fingerprint(&entry.conversation_fingerprint)
                 || entry.identity_source != "configured_wechat_title_continuity_v1"
                 || conversations
                     .insert(entry.conversation_fingerprint.clone(), entry)
@@ -237,22 +240,10 @@ impl NativeObservationBridge {
             || snapshot
                 .partial_reasons
                 .iter()
-                .any(|v| v != "HEURISTIC_REGION")
+                .any(|v| v != "HEURISTIC_REGION" && v != UNRESOLVED_IDENTITY_REASON)
         {
             return Ok(BridgeOutcome::Provisional);
         }
-        let Some(bound) = self
-            .conversations
-            .get(&snapshot.conversation_fingerprint)
-            .cloned()
-        else {
-            return Ok(BridgeOutcome::Provisional);
-        };
-        if bound.application_session_fingerprint != snapshot.application_session_fingerprint {
-            self.tracks.remove(&snapshot.conversation_fingerprint);
-            return Ok(BridgeOutcome::Provisional);
-        }
-        let binding = bound.binding;
         let signatures: Vec<_> = snapshot
             .messages
             .iter()
@@ -264,6 +255,45 @@ impl NativeObservationBridge {
         {
             return Ok(BridgeOutcome::Provisional);
         }
+        let unresolved = is_unresolved_conversation_fingerprint(&snapshot.conversation_fingerprint);
+        let has_unresolved_reason = snapshot
+            .partial_reasons
+            .iter()
+            .any(|value| value == UNRESOLVED_IDENTITY_REASON);
+        if unresolved != has_unresolved_reason {
+            return Ok(BridgeOutcome::Provisional);
+        }
+        let track_key = if unresolved {
+            let candidates = self
+                .conversations
+                .iter()
+                .filter_map(|(fingerprint, bound)| {
+                    if bound.application_session_fingerprint
+                        != snapshot.application_session_fingerprint
+                    {
+                        return None;
+                    }
+                    let previous = self.tracks.get(fingerprint)?;
+                    (overlap_count(&previous.signatures, &signatures).unwrap_or(0) >= 2)
+                        .then(|| fingerprint.clone())
+                })
+                .collect::<Vec<_>>();
+            match candidates.as_slice() {
+                [fingerprint] => fingerprint.clone(),
+                [] => return Ok(BridgeOutcome::Provisional),
+                _ => return Ok(BridgeOutcome::Ambiguous),
+            }
+        } else {
+            snapshot.conversation_fingerprint.clone()
+        };
+        let Some(bound) = self.conversations.get(&track_key).cloned() else {
+            return Ok(BridgeOutcome::Provisional);
+        };
+        if bound.application_session_fingerprint != snapshot.application_session_fingerprint {
+            self.tracks.remove(&track_key);
+            return Ok(BridgeOutcome::Provisional);
+        }
+        let binding = bound.binding;
         if binding.kind == ConversationKind::Group
             && signatures
                 .iter()
@@ -271,7 +301,6 @@ impl NativeObservationBridge {
         {
             return Ok(BridgeOutcome::Provisional);
         }
-        let track_key = snapshot.conversation_fingerprint.clone();
         let Some(previous) = self.tracks.get_mut(&track_key) else {
             let (ids, observations) = baseline(&binding, &track_key, &signatures, observed_ms);
             self.tracks.insert(
@@ -287,10 +316,7 @@ impl NativeObservationBridge {
         if previous.signatures == signatures {
             return Ok(BridgeOutcome::NoChange);
         }
-        let max = previous.signatures.len().min(signatures.len());
-        let overlap = (1..=max)
-            .rev()
-            .find(|n| previous.signatures[previous.signatures.len() - *n..] == signatures[..*n]);
+        let overlap = overlap_count(&previous.signatures, &signatures);
         let Some(overlap) = overlap else {
             return Ok(BridgeOutcome::Ambiguous);
         };
@@ -407,6 +433,17 @@ fn signature(message: &PrivateBridgeMessage) -> Result<Signature> {
         sender: message.sender_fingerprint.clone(),
         complete: message.complete,
     })
+}
+
+fn is_unresolved_conversation_fingerprint(value: &str) -> bool {
+    value.len() == 64 && value.bytes().all(|value| value == b'0')
+}
+
+fn overlap_count(previous: &[Signature], current: &[Signature]) -> Option<usize> {
+    let max = previous.len().min(current.len());
+    (1..=max)
+        .rev()
+        .find(|count| previous[previous.len() - *count..] == current[..*count])
 }
 
 fn is_han(value: char) -> bool {
@@ -715,6 +752,56 @@ mod tests {
         };
         assert_eq!(new.len(), 1);
         assert_eq!(new[0].message.text.as_deref(), Some("新增 K123 消息"));
+    }
+
+    #[test]
+    fn unresolved_title_uses_unique_existing_continuity_track() {
+        let mut bridge =
+            NativeObservationBridge::new(vec![entry(ConversationKind::Private)], acceptance())
+                .unwrap();
+        let first = snapshot(vec![
+            msg("A", PrivateDirection::Me),
+            msg("B", PrivateDirection::Them),
+            msg("C", PrivateDirection::Them),
+        ]);
+        assert!(matches!(
+            bridge.bridge(&first, 10).unwrap(),
+            BridgeOutcome::Baseline(_)
+        ));
+
+        let mut unresolved = snapshot(vec![
+            msg("B", PrivateDirection::Them),
+            msg("C", PrivateDirection::Them),
+            msg("D", PrivateDirection::Them),
+        ]);
+        unresolved.conversation_fingerprint = "0".repeat(64);
+        unresolved
+            .partial_reasons
+            .push(UNRESOLVED_IDENTITY_REASON.into());
+        let BridgeOutcome::New(new) = bridge.bridge(&unresolved, 20).unwrap() else {
+            panic!("expected continuity fallback to produce one new message")
+        };
+        assert_eq!(new.len(), 1);
+        assert_eq!(new[0].message.text.as_deref(), Some("D"));
+    }
+
+    #[test]
+    fn unresolved_title_without_existing_continuity_is_provisional() {
+        let mut bridge =
+            NativeObservationBridge::new(vec![entry(ConversationKind::Private)], acceptance())
+                .unwrap();
+        let mut unresolved = snapshot(vec![
+            msg("A", PrivateDirection::Them),
+            msg("B", PrivateDirection::Them),
+        ]);
+        unresolved.conversation_fingerprint = "0".repeat(64);
+        unresolved
+            .partial_reasons
+            .push(UNRESOLVED_IDENTITY_REASON.into());
+        assert!(matches!(
+            bridge.bridge(&unresolved, 10).unwrap(),
+            BridgeOutcome::Provisional
+        ));
     }
 
     #[test]

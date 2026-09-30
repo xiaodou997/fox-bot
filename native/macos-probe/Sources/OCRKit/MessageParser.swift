@@ -56,10 +56,11 @@ public enum WeChatMessageParser {
     // Reference project used x>=0.32 and bottom-origin body 0.16...0.90 on WeChat 4.x.
     // FoxBot stores Vision boxes in top-origin coordinates, yielding y 0.10...0.84.
     public static let strategy = "WECHAT_HEURISTIC_V0"
+    public static let unresolvedConversationFingerprint = String(repeating: "0", count: 64)
     // Read slightly left of the body region so wide/group layouts whose title begins around
-    // x≈0.28 are still available for conversation identity. Message parsing remains gated by
+    // x≈0.27 are still available for conversation identity without edge clipping. Message parsing remains gated by
     // chatRegion x>=0.32, so sidebar text cannot become chat messages.
-    public static let readRegion = CGRect(x: 0.27, y: 0.00, width: 0.73, height: 0.84)
+    public static let readRegion = CGRect(x: 0.26, y: 0.00, width: 0.74, height: 0.84)
     public static let chatRegion = CGRect(x: 0.32, y: 0.10, width: 0.68, height: 0.74)
     private static let minimumConfidence: Float = 0.30
 
@@ -127,8 +128,9 @@ public enum WeChatMessageParser {
     private static func normalizedTitle(_ snapshot: OCRSnapshot) -> String? {
         let candidates = snapshot.lines.filter {
             $0.confidence >= minimumConfidence
-                && $0.bounds.midY >= 0.015 && $0.bounds.midY < 0.10
-                && $0.bounds.minX >= 0.27 && $0.bounds.minX < 0.94
+                && $0.bounds.midY >= 0.015
+                && $0.bounds.minY < 0.045
+                && $0.bounds.minX >= 0.26 && $0.bounds.minX < 0.94
                 && !isNoise($0.text)
         }.sorted {
             if abs($0.bounds.minY - $1.bounds.minY) < 0.005 { return $0.bounds.minX < $1.bounds.minX }
@@ -282,17 +284,21 @@ public enum WeChatMessageParser {
         _ snapshot: OCRSnapshot,
         applicationSessionFingerprint: String
     ) -> PrivateMessageSnapshot? {
-        guard let conversationFingerprint = conversationFingerprint(snapshot),
-              applicationSessionFingerprint.count == 64,
+        guard applicationSessionFingerprint.count == 64,
               applicationSessionFingerprint.allSatisfy({ $0.isHexDigit && !$0.isUppercase })
         else { return nil }
         let parsed = parse(snapshot)
+        let fingerprint = conversationFingerprint(snapshot)
+        var partialReasons = parsed.partialReasons
+        if fingerprint == nil {
+            partialReasons.append("CONVERSATION_IDENTITY_UNRESOLVED")
+        }
         return PrivateMessageSnapshot(
             schemaVersion: "foxbot.private-message-snapshot.v1",
             strategy: strategy,
             applicationSessionFingerprint: applicationSessionFingerprint,
-            conversationFingerprint: conversationFingerprint,
-            partialReasons: parsed.partialReasons,
+            conversationFingerprint: fingerprint ?? unresolvedConversationFingerprint,
+            partialReasons: partialReasons,
             messages: parsed.messages.map {
                 PrivateBridgeMessage(
                     text: $0.text,
