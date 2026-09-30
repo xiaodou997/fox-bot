@@ -38,7 +38,7 @@ G2d 真实验收工具链已就绪：可信 PrivateMessageSnapshot 可经过身�
 | [G2c 验收回执](acceptance/receipts/2026-09-29-g2c-identity-host.md) | 固定代码提交、真实微信两帧身份稳定、Rust host 生命周期与 PROVISIONAL 边界 |
 | [G2d Observation Bridge](development/G2D_OBSERVATION_BRIDGE.md) | PrivateMessageSnapshot → Runtime::ingest、两阶段游标提交、背压重试和真实验收边界 |
 | [G2d 验收回执](acceptance/receipts/2026-09-29-g2d-observation-bridge.md) | 固定代码提交、合成 Runtime Bridge PASS 与真实微信 BLOCKED 边界 |
-| [G2d 真实验收工作流](development/G2D_REAL_ACCEPTANCE.md) | 私有采样、人工 ground-truth、显式 Binding、baseline 和单条 incoming 验证 |
+| [G2d 真实验收工作流](development/G2D_REAL_ACCEPTANCE.md) | 私有采样、人工 ground-truth、显式 Binding、baseline、单条 incoming 验证与状态引导器 |
 | [G2d Readiness 回执](acceptance/receipts/2026-09-29-g2d-real-readiness.md) | 固定提交的真实私有采样、0600 权限、自我验收防护与 BLOCKED 边界 |
 
 已执行的检查或测试回执保存到 `docs/acceptance/receipts/`，清单本身不作为累计通过报告。新增回执时使用稳定文件名，标记实际被检提交；文档回执的提交与被测程序提交可以不同，不能混写。

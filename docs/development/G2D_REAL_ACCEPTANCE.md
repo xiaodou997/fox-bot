@@ -7,6 +7,17 @@
 
 ## 1. 私有数据目录
 
+### 推荐：先用状态引导器
+
+~~~bash
+python3 scripts/g2d_real_status.py init g2d-test
+python3 scripts/g2d_real_status.py status g2d-test
+~~~
+
+`status` 不读取或输出正文，只检查私有工作流文件的存在、required tags、expected 填写数量、acceptance、baseline 与 verified 状态。它会返回当前阶段、是否需要人工操作以及下一条安全命令。建议每完成一步都重新运行一次，而不是手工记忆整套流程。
+
+阶段会依次推进：`CAPTURE_CASES` → `LABEL_EXPECTED` → `RUN_ACCEPTANCE/FIX_GROUND_TRUTH` → `READY_BASELINE` → `WAIT_EXTERNAL_MESSAGE` → `COMPLETE`。
+
 所有真实正文和人工标注只允许留在：
 
 ~~~text
