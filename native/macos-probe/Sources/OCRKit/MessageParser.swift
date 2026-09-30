@@ -104,6 +104,10 @@ public enum WeChatMessageParser {
         first.union(second)
     }
 
+    private static func multilineGapLimit(for line: OCRLine) -> CGFloat {
+        min(0.04, max(0.012, line.bounds.height * 1.35))
+    }
+
     private static func digest(_ value: String, domain: String) -> String {
         let data = Data((domain + "\0" + value).utf8)
         return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
@@ -202,11 +206,12 @@ public enum WeChatMessageParser {
                 let firstSide = direction(x: line.bounds.minX, width: line.bounds.width)
                 let nextSide = direction(x: next.bounds.minX, width: next.bounds.width)
                 let gap = next.bounds.minY - line.bounds.maxY
+                let senderGapLimit = min(0.03, max(0.012, next.bounds.height * 1.5))
                 if firstSide == .them && nextSide == .them
                     && line.text.count <= 32
                     && line.bounds.height <= next.bounds.height * 0.88
                     && abs(line.bounds.minX - next.bounds.minX) < 0.03
-                    && gap >= 0 && gap <= 0.06 {
+                    && gap >= -0.003 && gap <= senderGapLimit {
                     headerIndexes.insert(index)
                 }
             }
@@ -225,7 +230,7 @@ public enum WeChatMessageParser {
                 let gap = line.bounds.minY - last.bounds.maxY
                 let aligned = abs(line.bounds.minX - last.bounds.minX) < 0.025
                 let compatible = side == last.direction || side == .unknown || last.direction == .unknown
-                if aligned && compatible && gap >= 0 && gap < 0.04 {
+                if aligned && compatible && gap >= -0.005 && gap < multilineGapLimit(for: line) {
                     var updated = last
                     messages.removeLast()
                     updated.lines.append(line.text)

@@ -50,7 +50,7 @@ final class MessageParserTests: XCTestCase {
     func testLowerVisibleChatIsIncludedButInputAreaRemainsExcluded() {
         let snapshot = parserSnapshot([
             parserLine("群成员", 0.33, 0.73, 0.06, 0.018),
-            parserLine("底部可见正文", 0.335, 0.79, 0.14, 0.025),
+            parserLine("底部可见正文", 0.335, 0.758, 0.14, 0.025),
             parserLine("输入框草稿", 0.40, 0.88, 0.16, 0.03)
         ])
         let result = WeChatMessageParser.parse(snapshot)
@@ -92,6 +92,34 @@ final class MessageParserTests: XCTestCase {
         XCTAssertEqual(result.messages[0].lines, ["第一行", "第二行"])
         XCTAssertEqual(result.messages[0].direction, .them)
         XCTAssertEqual(result.messages[1].direction, .me)
+    }
+
+    func testRepeatedMultilineBubblesStayAsTwoMessages() {
+        let snapshot = parserSnapshot([
+            parserLine("重复测试第一行", 0.40, 0.30, 0.24, 0.015),
+            parserLine("重复测试第二行", 0.401, 0.314, 0.24, 0.015),
+            parserLine("重复测试第一行", 0.40, 0.360, 0.24, 0.015),
+            parserLine("重复测试第二行", 0.401, 0.374, 0.24, 0.015),
+        ])
+        let result = WeChatMessageParser.parse(snapshot)
+        XCTAssertEqual(result.messages.count, 2)
+        XCTAssertEqual(result.messages[0].text, "重复测试第一行\n重复测试第二行")
+        XCTAssertEqual(result.messages[1].text, "重复测试第一行\n重复测试第二行")
+        XCTAssertEqual(result.messages[0].direction, .them)
+        XCTAssertEqual(result.messages[1].direction, .them)
+    }
+
+    func testShortTrailingLineIsNotPromotedToSenderAcrossLargeBubbleGap() {
+        let snapshot = parserSnapshot([
+            parserLine("上一条消息第一行", 0.40, 0.30, 0.24, 0.015),
+            parserLine("上一条消息短尾行", 0.40, 0.315, 0.20, 0.011),
+            parserLine("下一条独立消息", 0.40, 0.38, 0.24, 0.015),
+        ])
+        let result = WeChatMessageParser.parse(snapshot)
+        XCTAssertEqual(result.messages.count, 2)
+        XCTAssertEqual(result.messages[0].text, "上一条消息第一行\n上一条消息短尾行")
+        XCTAssertNil(result.messages[1].sender)
+        XCTAssertEqual(result.messages[1].text, "下一条独立消息")
     }
 
     func testGroupSenderHeaderIsAttachedButNeverSerializedInSummary() throws {
