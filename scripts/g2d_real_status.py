@@ -129,10 +129,10 @@ def status(session: str) -> dict:
             expected_missing_cases=expected_missing,
             operator_action_required=True,
             operator_instruction=(
-                f"Edit target/g2d-real/{session}/groundtruth.json locally. "
-                "Fill expected from what you can visually verify; do not copy observed blindly."
+                "Run the local interactive reviewer in your own terminal. It will display each observed "
+                "message only on that TTY and let you accept, edit, delete, or add expected messages."
             ),
-            next_command=f"python3 scripts/g2d_ground_truth.py {session}",
+            next_command=f"python3 scripts/g2d_review_ground_truth.py {session}",
         )
         return result
 
@@ -149,10 +149,10 @@ def status(session: str) -> dict:
             stage="FIX_GROUND_TRUTH",
             operator_action_required=True,
             operator_instruction=(
-                f"Review target/g2d-real/{session}/groundtruth.json against the dedicated test chats, "
-                "fix the expected labels or parser discrepancies, then rerun next_command."
+                "Rerun the local interactive reviewer with --redo for any case that needs correction, "
+                "then rerun acceptance."
             ),
-            next_command=f"python3 scripts/g2d_ground_truth.py {session}",
+            next_command=f"python3 scripts/g2d_review_ground_truth.py {session} --redo",
         )
         return result
 

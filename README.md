@@ -119,6 +119,14 @@ python3 scripts/g2d_ground_truth.py g2d-test
 
 真实正文和人工标注只保存在 Git 忽略的 `target/g2d-real/<session>/`；采样会把 observed 写入私有文件，但 expected 永远默认为空，防止 OCR 自我验收。完成 6 类人工标注并通过 acceptance 后，才能建立 baseline，再由另一测试账号发送一条已知 incoming，最后执行 real verify。完整步骤见 [G2d 真实验收说明](docs/development/G2D_REAL_ACCEPTANCE.md)。
 
+人工确认推荐使用本机交互式审核器，而不是手改 JSON：
+
+~~~bash
+python3 scripts/g2d_review_ground_truth.py g2d-test
+~~~
+
+审核器只允许在真实 TTY 中显示私有正文；被管道、自动化或远程日志调用时会直接拒绝，因此聊天内容不会被带入普通验收日志。
+
 推荐通过状态引导器推进：
 
 ~~~bash

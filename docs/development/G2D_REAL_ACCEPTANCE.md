@@ -67,13 +67,22 @@ target/g2d-real/g2d-test/
 
 ## 3. 阶段 B：人工标注与 acceptance
 
-测试人员直接编辑本机：
+推荐不要直接编辑 JSON，而是运行本机交互式审核器：
 
-~~~text
-target/g2d-real/g2d-test/groundtruth.json
+~~~bash
+python3 scripts/g2d_review_ground_truth.py g2d-test
 ~~~
 
-填写每个 case 的 `expected`。然后运行：
+审核器会在用户自己的终端中逐条显示 `observed` 的文字、ME/THEM 与 sender_labeled，并提供：
+
+- `Y/Enter`：确认该条识别正确；
+- `E`：修改文字、方向或 sender_labeled；
+- `D`：把误识别条目从 expected 中删除；
+- 额外补加：录入 OCR 完全漏掉的消息。
+
+正文只显示在真实交互 TTY。若 stdin/stdout 不是 TTY（例如 WebCodex、管道、CI 或日志采集），审核器会直接返回 `REFUSED_NON_INTERACTIVE`，避免真实聊天正文进入自动化日志。
+
+审核完成后工具原子写回 `target/g2d-real/g2d-test/groundtruth.json` 的 expected。然后运行：
 
 ~~~bash
 python3 scripts/g2d_ground_truth.py g2d-test
