@@ -12,6 +12,7 @@ final class SendGatePolicyTests: XCTestCase {
             conversationMatches: true,
             draftMatches: true,
             recentUserInput: false,
+            inputMethodWindowVisible: false,
             composingVerifiedSafe: true
         )
     }
@@ -41,5 +42,13 @@ final class SendGatePolicyTests: XCTestCase {
             decision.blockers,
             [.appNotFrontmost, .draftMismatch, .recentUserInput]
         )
+    }
+
+    func testVisibleInputMethodWindowFailsClosed() {
+        var facts = readyFacts()
+        facts.inputMethodWindowVisible = true
+        let decision = NativeSendGatePolicy.evaluate(facts)
+        XCTAssertFalse(decision.ready)
+        XCTAssertEqual(decision.blockers, [.inputMethodWindowVisible])
     }
 }

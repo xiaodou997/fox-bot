@@ -8,7 +8,8 @@ let package = Package(
         .executable(name: "foxbot-macos-probe", targets: ["ProbeCLI"]),
         .executable(name: "foxbot-macos-ocr", targets: ["OCRCLI"]),
         .executable(name: "foxbot-macos-draft", targets: ["DraftCLI"]),
-        .executable(name: "foxbot-macos-send-gate", targets: ["SendGateCLI"])
+        .executable(name: "foxbot-macos-send-gate", targets: ["SendGateCLI"]),
+        .executable(name: "foxbot-macos-ime-evidence", targets: ["IMEEvidenceCLI"])
     ],
     targets: [
         .target(name: "ProbeKit"),
@@ -18,6 +19,7 @@ let package = Package(
         .executableTarget(name: "OCRCLI", dependencies: ["OCRKit", "ProbeKit"]),
         .executableTarget(name: "DraftCLI", dependencies: ["OCRKit", "ProbeKit"]),
         .executableTarget(name: "SendGateCLI", dependencies: ["OCRKit", "ProbeKit"]),
+        .executableTarget(name: "IMEEvidenceCLI", dependencies: ["OCRKit", "ProbeKit"]),
         .testTarget(name: "OCRKitTests", dependencies: ["OCRKit", "ProbeKit"])
     ]
 )

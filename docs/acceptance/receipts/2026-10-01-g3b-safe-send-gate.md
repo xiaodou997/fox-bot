@@ -111,3 +111,5 @@ Core 额外要求 `composition_verified=true` 才可 READY；不能用默认 `co
 - screenshots saved：0。
 
 G3c 继续 BLOCKED；不得用降低 Gate 条件换取 READY。
+
+后续 IME Evidence Spike 没有找到 authoritative cross-process SAFE 信号；见 [2026-10-01-g3b-ime-evidence-spike.md](2026-10-01-g3b-ime-evidence-spike.md)。因此本回执的 BLOCKED 结论继续有效。

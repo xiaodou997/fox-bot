@@ -16,7 +16,9 @@ private struct NativeGateReport: Encodable {
     let conversationMatches: Bool
     let draftMatches: Bool
     let recentUserInput: Bool
-    let composingState = "UNVERIFIED"
+    let compositionVerified: Bool
+    let composingState: String
+    let inputMethodWindowVisible: Bool
     let readOnly = true
     let rawTextIncluded = false
     let imageSaved = false
@@ -84,6 +86,7 @@ private func blockedCaptureReport(frontmost: Bool) -> NativeGateReport {
         conversationMatches: false,
         draftMatches: false,
         recentUserInput: recentUserInput(),
+        inputMethodWindowVisible: false,
         composingVerifiedSafe: false
     )
     let decision = NativeSendGatePolicy.evaluate(facts)
@@ -97,7 +100,10 @@ private func blockedCaptureReport(frontmost: Bool) -> NativeGateReport {
         conversationResolved: facts.conversationResolved,
         conversationMatches: facts.conversationMatches,
         draftMatches: facts.draftMatches,
-        recentUserInput: facts.recentUserInput
+        recentUserInput: facts.recentUserInput,
+        compositionVerified: false,
+        composingState: "UNVERIFIED",
+        inputMethodWindowVisible: false
     )
 }
 
@@ -162,6 +168,11 @@ struct SendGateMain {
             let draftMatches =
                 WeChatDraftPolicy.verified(expectedDraft, snapshot: first.draftSnapshot)
                 && WeChatDraftPolicy.verified(expectedDraft, snapshot: second.draftSnapshot)
+            let imeFacts = NativeIMEEvidenceProbe.collect(target: .wechat)
+            let imeDecision = IMEEvidencePolicy.evaluate(imeFacts)
+            let composingState = imeDecision.compositionVerified
+                ? (imeDecision.composing ? "COMPOSING" : "SAFE")
+                : "UNVERIFIED"
             let facts = NativeSendGateFacts(
                 captureReady: true,
                 frontmost: frontmost,
@@ -170,10 +181,10 @@ struct SendGateMain {
                 conversationResolved: resolved,
                 conversationMatches: conversationMatches,
                 draftMatches: draftMatches,
-                recentUserInput: recentUserInput(),
-                // WeChat 4.1.13 exposes no semantic editor/marked-text state through AX.
-                // Until a reliable signal exists, composing must remain fail-closed.
-                composingVerifiedSafe: false
+                recentUserInput: imeFacts.recentUserInput,
+                inputMethodWindowVisible: imeFacts.inputMethodOnScreenWindowCount > 0,
+                composingVerifiedSafe:
+                    imeDecision.compositionVerified && !imeDecision.composing
             )
             let decision = NativeSendGatePolicy.evaluate(facts)
             emit(NativeGateReport(
@@ -186,7 +197,10 @@ struct SendGateMain {
                 conversationResolved: facts.conversationResolved,
                 conversationMatches: facts.conversationMatches,
                 draftMatches: facts.draftMatches,
-                recentUserInput: facts.recentUserInput
+                recentUserInput: facts.recentUserInput,
+                compositionVerified: imeDecision.compositionVerified,
+                composingState: composingState,
+                inputMethodWindowVisible: facts.inputMethodWindowVisible
             ))
         } catch {
             emit(blockedCaptureReport(frontmost: frontmost))

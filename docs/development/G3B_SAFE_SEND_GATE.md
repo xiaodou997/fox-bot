@@ -139,7 +139,7 @@ blockers                     COMPOSING_UNVERIFIED
 
 ## 8. 下一步
 
-G3c Real Send **不能开始**，直到有可信方式证明 composing/marked-text 已清空。
+IME Evidence Spike 已完成，结论见 [G3B_IME_EVIDENCE_SPIKE.md](G3B_IME_EVIDENCE_SPIKE.md)。当前没有找到可用于微信 4.1.13 的 authoritative cross-process composition-safe 证据，因此 G3c Real Send **不能开始**。
 
 可继续研究：
 

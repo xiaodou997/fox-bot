@@ -3,7 +3,7 @@
 - 编号：FB-MATRIX-001
 - 日期：2026-10-01
 - 适用设计：[FB-BASELINE-001](../design/BASELINE.md)
-- 状态：完整聊天适配器仍未实现/未验收；macOS 微信 current-session 的 G2 只读链已完成真实 Freeze，G3a 已取得测试级真实 draft fill / OCR verify，G3b Core/Host safe-send gate 已 PASS；native send-ready 仍因 IME composing 无可靠语义证据而 BLOCKED。发送、导航与恢复继续独立验收。
+- 状态：完整聊天适配器仍未实现/未验收；macOS 微信 current-session 的 G2 只读链已完成真实 Freeze，G3a 已取得测试级真实 draft fill / OCR verify，G3b Core/Host safe-send gate 已 PASS，IME Evidence Spike 已完成；native send-ready 仍因缺少 authoritative composition-safe 证据而 BLOCKED。发送、导航与恢复继续独立验收。
 - 来源：[固定提交与审计记录](../references/UPSTREAM_AUDIT.md)
 
 ## 1. 状态语义
@@ -28,7 +28,7 @@
 | AD-QQ | Android / QQ | PRIMARY | 无障碍 resource-id / text；气泡布局用于方向解析 | ACTION_SET_TEXT / 粘贴回填，不发送 | PLANNED；NOT_RUN |
 | AD-X | Android / X 私信 | PRIMARY | Compose 节点 contentDescription 解析 | 通用输入框回填，不发送 | PLANNED；NOT_RUN |
 | AD-FS | Android / 飞书 | PRIMARY | 无障碍气泡矩形/状态＋本地 ML Kit OCR | 通用输入框回填，不发送 | PLANNED；NOT_RUN |
-| MC-WX | macOS / 微信 | PRIMARY | CaptureApp → 窗口截图与 Apple Vision 路径 | CGEvent Unicode 测试回填，不发送 | G2 READ FREEZE；G3a C06 REAL PASS (TEST ONLY)；G3b CORE/HOST PASS、NATIVE BLOCKED(COMPOSING)；C07～C10 NOT_RUN |
+| MC-WX | macOS / 微信 | PRIMARY | CaptureApp → 窗口截图与 Apple Vision 路径 | CGEvent Unicode 测试回填，不发送 | G2 READ FREEZE；G3a C06 REAL PASS；G3b CORE/HOST PASS；IME SPIKE COMPLETE / SEND BLOCKED；C07～C10 NOT_RUN |
 | MC-QQ | macOS / QQ | PRIMARY | AXApp → AX 文本/类属性解析 | AX 设值及输入事件降级；不发送 | PLANNED；NOT_RUN |
 | WIN-WX | Windows / 微信 | PRIMARY | 上游 README 描述 WGC＋RapidOCR | app/fill.py 坐标定位＋剪贴板粘贴；不发送 | PLANNED；NOT_RUN |
 | AD-WX | Android / 微信 | PROBE_ONLY | 上游主动禁用微信入口；旧适配代码仍保留 | 不可据此宣称能够采集、回填或发送 | PLANNED；NOT_RUN；自动发送关闭 |
@@ -239,3 +239,19 @@ known_gaps:
 | C07 send | NOT IMPLEMENTED | 无 Enter/Return、无发送按钮 click | G3c 继续 BLOCKED |
 
 [G3b 说明](../development/G3B_SAFE_SEND_GATE.md)与[回执](../acceptance/receipts/2026-10-01-g3b-safe-send-gate.md)记录规则与真机结果。Gate BLOCKED 是正确安全结果，不得通过把 IME unknown 当 false 来升级为 READY。
+
+### G3b IME Evidence Spike
+
+| 信号 | 分类 | 真机结果 | 能否证明 SAFE |
+| --- | --- | --- | --- |
+| target app AXFocusedUIElement | CONTEXT / UNAVAILABLE | 微信前台时无可用 focused UI element | 否 |
+| system-wide AXFocusedUIElement | CONTEXT / UNAVAILABLE | 仅接受 PID 属于微信的 focused element；本机无值 | 否 |
+| AXSelectedTextRange | CONTEXT_ONLY | 微信目标元素不可用 | 否；选区也不是 marked-range |
+| TIS current input source | CONTEXT_ONLY | 可识别当前输入源及对应输入法进程 | 否；只说明输入源 |
+| recent key/mouse/scroll | POSITIVE_BLOCKER | 可检测最近输入 | 只能阻断，静默不能证明 SAFE |
+| input-method on-screen window | POSITIVE_BLOCKER | 当前非组字基线为 0；接入 send-gate 作为额外 blocker | 只能阻断；absence 不证明 SAFE |
+| NSTextInputClient hasMarkedText/markedRange | AUTHORITATIVE（仅 receiver 自身） | 无法从另一个进程取得微信 receiver | 当前不可用 |
+
+新增共享 `NativeIMEEvidenceProbe` 与 `foxbot-macos-ime-evidence`。send-gate 直接消费相同证据；当前 authoritative state 始终 `UNAVAILABLE`，因此不会因为 heuristic 信号“看起来正常”而 READY。
+
+[IME Spike 说明](../development/G3B_IME_EVIDENCE_SPIKE.md)与[回执](../acceptance/receipts/2026-10-01-g3b-ime-evidence-spike.md)记录完整实验。

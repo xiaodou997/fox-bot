@@ -9,6 +9,7 @@ public enum NativeSendGateBlocker: String, Codable, CaseIterable {
     case conversationMismatch = "CONVERSATION_MISMATCH"
     case draftMismatch = "DRAFT_MISMATCH"
     case recentUserInput = "RECENT_USER_INPUT"
+    case inputMethodWindowVisible = "INPUT_METHOD_WINDOW_VISIBLE"
     case composingUnverified = "COMPOSING_UNVERIFIED"
 }
 
@@ -21,6 +22,7 @@ public struct NativeSendGateFacts: Equatable {
     public var conversationMatches: Bool
     public var draftMatches: Bool
     public var recentUserInput: Bool
+    public var inputMethodWindowVisible: Bool
     public var composingVerifiedSafe: Bool
 
     public init(
@@ -32,6 +34,7 @@ public struct NativeSendGateFacts: Equatable {
         conversationMatches: Bool,
         draftMatches: Bool,
         recentUserInput: Bool,
+        inputMethodWindowVisible: Bool,
         composingVerifiedSafe: Bool
     ) {
         self.captureReady = captureReady
@@ -42,6 +45,7 @@ public struct NativeSendGateFacts: Equatable {
         self.conversationMatches = conversationMatches
         self.draftMatches = draftMatches
         self.recentUserInput = recentUserInput
+        self.inputMethodWindowVisible = inputMethodWindowVisible
         self.composingVerifiedSafe = composingVerifiedSafe
     }
 }
@@ -62,6 +66,7 @@ public enum NativeSendGatePolicy {
         if !facts.conversationMatches { blockers.append(.conversationMismatch) }
         if !facts.draftMatches { blockers.append(.draftMismatch) }
         if facts.recentUserInput { blockers.append(.recentUserInput) }
+        if facts.inputMethodWindowVisible { blockers.append(.inputMethodWindowVisible) }
         if !facts.composingVerifiedSafe { blockers.append(.composingUnverified) }
         return NativeSendGateDecision(ready: blockers.isEmpty, blockers: blockers)
     }
