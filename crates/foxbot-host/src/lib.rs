@@ -29,6 +29,14 @@ pub enum HostError {
     CredentialMissing,
     #[error("system credential store is unavailable")]
     CredentialUnavailable,
+    #[error(
+        "credential access requires foreground authorization; unattended Keychain reads do not prompt"
+    )]
+    CredentialInteractionRequired,
+    #[error(
+        "Keychain denied credential access; authorize this build in the foreground without replacing the existing key"
+    )]
+    CredentialAccessDenied,
     #[error("credential already exists; replacement requires an explicit rotation workflow")]
     CredentialExists,
     #[error("credential is invalid")]

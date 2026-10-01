@@ -60,20 +60,47 @@ pub trait CredentialStore {
     /// Caller holds DeviceOwner. Never replace an existing ledger key implicitly.
     fn create(&self, reference: &CredentialRef, purpose: &str, secret: &Secret) -> Result<()>;
 }
+#[cfg(any(target_os = "macos", test))]
+fn keychain_error(code: i32) -> HostError {
+    eprintln!(
+        "{}",
+        serde_json::json!({"event":"keychain_error", "os_status":code})
+    );
+    match code {
+        -25300 => HostError::CredentialMissing,
+        -25308 => HostError::CredentialInteractionRequired,
+        -25293 => HostError::CredentialAccessDenied,
+        _ => HostError::CredentialUnavailable,
+    }
+}
+
+/// The existing file-based macOS Keychain API has process-wide interaction policy.
+/// Serialize our calls and restore the prior policy; never accept an authorization dialog
+/// from an unattended read. This changes prompting only, not the item's access control.
+#[cfg(target_os = "macos")]
+fn without_keychain_ui<T>(operation: impl FnOnce() -> Result<T>) -> Result<T> {
+    use security_framework::os::macos::keychain::SecKeychain;
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _serialized = LOCK.lock().map_err(|_| HostError::CredentialUnavailable)?;
+    let allowed = SecKeychain::user_interaction_allowed().map_err(|e| keychain_error(e.code()))?;
+    let _restore = if allowed {
+        Some(SecKeychain::disable_user_interaction().map_err(|e| keychain_error(e.code()))?)
+    } else {
+        None
+    };
+    operation()
+}
+
 pub struct NativeCredentials;
 #[cfg(target_os = "macos")]
 impl CredentialStore for NativeCredentials {
     fn load(&self, reference: &CredentialRef, purpose: &str) -> Result<Secret> {
         use security_framework::passwords::{PasswordOptions, generic_password};
         let account = reference.account(purpose)?;
-        let bytes = generic_password(PasswordOptions::new_generic_password(SERVICE, &account))
-            .map_err(|e| {
-                if e.code() == -25300 {
-                    HostError::CredentialMissing
-                } else {
-                    HostError::CredentialUnavailable
-                }
-            })?;
+        let bytes = without_keychain_ui(|| {
+            generic_password(PasswordOptions::new_generic_password(SERVICE, &account))
+                .map_err(|e| keychain_error(e.code()))
+        })?;
         Secret::new(bytes)
     }
     fn create(&self, reference: &CredentialRef, purpose: &str, secret: &Secret) -> Result<()> {
@@ -83,8 +110,10 @@ impl CredentialStore for NativeCredentials {
             Err(e) => return Err(e),
         }
         let account = reference.account(purpose)?;
-        security_framework::passwords::set_generic_password(SERVICE, &account, secret.bytes())
-            .map_err(|_| HostError::CredentialUnavailable)
+        without_keychain_ui(|| {
+            security_framework::passwords::set_generic_password(SERVICE, &account, secret.bytes())
+                .map_err(|e| keychain_error(e.code()))
+        })
     }
 }
 #[cfg(not(target_os = "macos"))]
@@ -152,4 +181,28 @@ pub fn native_smoke() -> Result<()> {
 #[cfg(not(target_os = "macos"))]
 pub fn native_smoke() -> Result<()> {
     Err(HostError::Unsupported)
+}
+
+#[cfg(test)]
+mod error_tests {
+    use super::*;
+
+    #[test]
+    fn interaction_required_is_not_missing_and_does_not_authorize_replacement() {
+        assert_eq!(
+            keychain_error(-25308),
+            HostError::CredentialInteractionRequired
+        );
+        assert_ne!(keychain_error(-25308), HostError::CredentialMissing);
+    }
+
+    #[test]
+    fn keychain_errors_remain_distinct_without_leaking_secrets() {
+        assert_eq!(keychain_error(-25300), HostError::CredentialMissing);
+        assert_eq!(keychain_error(-25293), HostError::CredentialAccessDenied);
+        assert_ne!(keychain_error(-25293), HostError::CredentialMissing);
+        for code in [-128, -1] {
+            assert_eq!(keychain_error(code), HostError::CredentialUnavailable);
+        }
+    }
 }

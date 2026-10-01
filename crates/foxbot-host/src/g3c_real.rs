@@ -106,6 +106,23 @@ pub fn inspect(binary: &Path, session: &str) -> Result<serde_json::Value> {
     }))
 }
 
+/// Public diagnostics contain fixed phase labels and error classes, never credentials or chat text.
+fn phase<T>(name: &str, operation: impl FnOnce() -> Result<T>) -> Result<T> {
+    let started = std::time::Instant::now();
+    eprintln!(
+        "{}",
+        serde_json::json!({"event":"g3c_phase", "phase":name, "state":"STARTED"})
+    );
+    let result = operation();
+    eprintln!(
+        "{}",
+        serde_json::json!({"event":"g3c_phase", "phase":name,
+        "state":if result.is_ok() { "COMPLETED" } else { "FAILED" },
+        "elapsed_ms":started.elapsed().as_millis()})
+    );
+    result
+}
+
 pub fn send_once(
     binary: &Path,
     session: &str,
@@ -127,7 +144,9 @@ pub fn send_once(
         id: key_name.into(),
     };
     credential.validate()?;
-    let secret = NativeCredentials.load(&credential, "ledger")?;
+    let secret = phase("CREDENTIAL_READ", || {
+        NativeCredentials.load(&credential, "ledger")
+    })?;
     let manifest: Manifest;
     let mut runtime;
     let mut initial_channel = None;
@@ -136,15 +155,18 @@ pub fn send_once(
         if manifest.schema_version != 1 || manifest.credential.id != key_name {
             return Err(HostError::Config);
         }
-        runtime = Runtime::open_encrypted(&ledger, secret.ledger_key()?)?;
+        runtime = phase("OPEN_LEDGER", || {
+            Ok(Runtime::open_encrypted(&ledger, secret.ledger_key()?)?)
+        })?;
     } else {
         // An interrupted preparation is not silently rebuilt under a fresh action id.
         if ledger.exists() {
             return Err(HostError::Config);
         }
         let mut bound = binding(session)?;
-        let mut channel =
-            NativeSendChannel::start(binary, bound.clone(), &owner, receipt.clone(), true)?;
+        let mut channel = phase("START_NATIVE_WORKER", || {
+            NativeSendChannel::start(binary, bound.clone(), &owner, receipt.clone(), true)
+        })?;
         let current = channel.observe()?;
         if current.draft_state != "EMPTY_HEURISTIC" || current.draft_text.as_deref() != Some("") {
             return Ok(
@@ -157,7 +179,9 @@ pub fn send_once(
         bound.binding.quiet_ms = 0;
         bound.binding.max_wait_ms = 0;
         let now = now_ms()?;
-        runtime = Runtime::open_encrypted(&ledger, secret.ledger_key()?)?;
+        runtime = phase("OPEN_LEDGER", || {
+            Ok(Runtime::open_encrypted(&ledger, secret.ledger_key()?)?)
+        })?;
         runtime.bind(&bound.binding)?;
         runtime.set_host_paused(false)?;
         // A labeled operator test trigger, never presented as an actual incoming chat message.
@@ -205,15 +229,20 @@ pub fn send_once(
                     true,
                 )?
             };
-            let state = runtime.dispatch(&manifest.action_id, now_ms()?, &mut channel)?;
+            let state = phase("DISPATCH", || {
+                Ok(runtime.dispatch(&manifest.action_id, now_ms()?, &mut channel)?)
+            })?;
             stats = channel.stats;
             state
         }
         ActionState::Unknown | ActionState::Submitted if receipt.exists() => {
             // This worker has NO native write capability. Repeating the command cannot resend.
-            let mut channel =
-                NativeSendChannel::start(binary, manifest.binding.clone(), &owner, receipt, false)?;
-            let state = runtime.reconcile(&manifest.action_id, &mut channel)?;
+            let mut channel = phase("START_READ_ONLY_WORKER", || {
+                NativeSendChannel::start(binary, manifest.binding.clone(), &owner, receipt, false)
+            })?;
+            let state = phase("RECONCILE", || {
+                Ok(runtime.reconcile(&manifest.action_id, &mut channel)?)
+            })?;
             stats = channel.stats;
             state
         }

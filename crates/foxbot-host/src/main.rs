@@ -91,6 +91,7 @@ async fn run() -> foxbot_host::Result<()> {
         println!(
             "foxbot-host run CONFIG STATE --allow-network [--allow-plaintext-synthetic]\n\
                   Starts PAUSED. JSON stdin: resume, message, status, pause, stop. EOF/Ctrl-C stops.\n\
+                  foxbot-host credential-check NAME --allow-keychain-read\n\
                   foxbot-host init-key NAME --confirm-keychain-write\n\
                   foxbot-host set-token NAME --confirm-keychain-write  (secret on stdin, never argv)\n\
                   foxbot-host keychain-smoke --allow-keychain-test\n\
@@ -102,6 +103,30 @@ async fn run() -> foxbot_host::Result<()> {
                   foxbot-host g3c-inspect WORKER SESSION --allow-native-read\n\
                   foxbot-host g3c-send-once WORKER SESSION RUN KEYNAME --allow-single-test-send\n\
                   Test only: foxbot-host lock-probe --hold"
+        );
+        return Ok(());
+    }
+    if args[0] == "credential-check" && args.len() == 3 && args[2] == "--allow-keychain-read" {
+        let reference = CredentialRef {
+            id: args[1].clone(),
+        };
+        reference.validate()?;
+        let started = std::time::Instant::now();
+        let status = match NativeCredentials.load(&reference, "ledger") {
+            Ok(secret) => {
+                secret.ledger_key()?;
+                "AVAILABLE"
+            }
+            Err(HostError::CredentialInteractionRequired) => "AUTHORIZATION_REQUIRED",
+            Err(HostError::CredentialAccessDenied) => "ACCESS_DENIED",
+            Err(HostError::CredentialMissing) => "MISSING",
+            Err(error) => return Err(error),
+        };
+        println!(
+            "{}",
+            serde_json::json!({"schema_version":"foxbot.credential-check.v1", "status":status,
+            "elapsed_ms":started.elapsed().as_millis(), "interaction_allowed":false,
+            "secret_included":false, "credential_writes":0, "native_chat_operations":0})
         );
         return Ok(());
     }
