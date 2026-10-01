@@ -245,12 +245,12 @@ known_gaps:
 | 对象 | 实现 | 当前边界 |
 | --- | --- | --- |
 | NativeSendChannel | IMPLEMENTED | 复用 Runtime 双门禁、DeviceOwner 和加密 outbox；单次写入/发送，不接真实模型 |
-| C06 / C07 | IMPLEMENTED | 最多 80 UTF-16 单元单行文本；Unicode 回填、精确回读、当前截图唯一发送按钮点击 |
-| C08 verify | IMPLEMENTED | Rust/Swift 双重核对新己方消息与旧序列连续性；不是送达/已读确认 |
+| C06 / C07 | REAL SINGLE ATTEMPT / TEST ONLY | 已执行固定短文本回填与一次发送，目标私聊可见；不代表完整自动回执通过 |
+| C08 verify | PARTIAL / REGRESSION PASS | 漏裁与时间分隔修复；新读取器两次找到对应己方消息，但旧任务 UNKNOWN，修复版完整自动回执待独立验收 |
 | 同一 RUN 重放 | IMPLEMENTED | 已完成直接报告；UNKNOWN 只读核对，不再 fill/send |
 | G2 绑定衔接 | IMPLEMENTED | 重放 baseline→verified 已验收连续性，保留 durable key；不猜测新目标 |
 
-实现、命令、回归和真实验收边界见[G3c-1 说明](../development/G3C1_SINGLE_REAL_SEND.md)。[本轮回执](../acceptance/receipts/2026-10-01-g3c1-single-real-send.md)记录 13/13 离线回归通过；当前前台会话与原测试绑定不符，真实 write/send 为 0，真实 C07/C08 仍 NOT_RUN。此表的 IMPLEMENTED 不代表已取得真实发送 PASS。
+实现、命令、回归和真实验收边界见[G3c-1 说明](../development/G3C1_SINGLE_REAL_SEND.md)。[最新回执](../acceptance/receipts/2026-10-01-g3c1-real-attempt-and-receipt-fix.md)记录一次真实发送、同 RUN 不重发及回执修复，修复代码 13/13 离线回归通过。原任务仍 UNKNOWN，新版宿主只读重放曾超时；G3c-1 保持 PARTIAL，不宣称全自动闭环验收完成。
 
 ### G3b IME Evidence Spike（归档；不再是执行门禁）
 

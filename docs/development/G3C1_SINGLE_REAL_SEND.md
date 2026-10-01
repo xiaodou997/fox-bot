@@ -2,7 +2,7 @@
 
 - 日期：2026-10-01
 - 前置：[G2 Freeze](../acceptance/receipts/2026-09-30-g2-freeze.md) · [无人值守执行契约](G3B_UNATTENDED_EXECUTION.md)
-- 状态：IMPLEMENTED / OFFLINE PASS；真实发送因当前会话与测试绑定不符而未执行，见[本轮回执](../acceptance/receipts/2026-10-01-g3c1-single-real-send.md)。
+- 状态：REAL SINGLE ATTEMPT / PARTIAL；已发送一次并只读识别到消息，旧自动回执仍 UNKNOWN；回执采集修复通过回归，完整修复版验收及宿主只读重放超时待收口，见[最新回执](../acceptance/receipts/2026-10-01-g3c1-real-attempt-and-receipt-fix.md)。
 - 范围：macOS 微信、已绑定的当前测试私聊、固定短文本、单条发送与只读结果核对。不是完整 AUTO_REPLY，也不是多会话值守。
 
 ## 1. 闭环
@@ -32,6 +32,8 @@ G3c-1 使用明确标注为 `SYNTHETIC_OPERATOR_TEST` 的测试触发，回复�
 Rust `NativeSendChannel` 实现现有 `MessageChannel`，复用 Runtime 的双门禁、持久化状态和 DeviceOwner。私有 IPC 有大小、schema、请求 ID、超时和副作用字段检查；异常时结束并回收 worker，不在失败后静默重启并重发。`write_attempted/send_attempted=null` 表示没有可信原生回执，不应解释成肯定没有发生动作。
 
 ## 3. 回执不是布尔值
+
+当前采集 revision 为 `WECHAT_RECEIPT_V2`，IPC 为 `foxbot.native-send-worker.v2`。采集保留 composer 上边界之前的完整消息，排除居中时间分隔；不删除左右气泡内的日期文字。旧回执仅存哈希，缺少用于重新解析的原文/坐标，不能自动补 revision 与新证据混用；保留 UNKNOWN，而不是迁移为成功。
 
 旧 G2 聊天 ROI 与输入区部分重叠；发送回执观察额外排除输入区和工具条，防止把刚回填的正文当成已发消息。历史文字只转为 digest、方向、完整性签名，用于本地核对，不写入公开输出。
 
@@ -68,7 +70,7 @@ target/debug/foxbot-host g3c-inspect \
 target/debug/foxbot-host init-key g3c1-test-20261001 --confirm-keychain-write
 ```
 
-仅在明确授权的测试私聊执行一条消息。下面相同 RUN 的第二次执行用于重放检查，不换 RUN：
+仅在明确授权的测试私聊执行一条消息。下面 RUN `742961` 已实际执行，当前只用于读取旧 UNKNOWN，不再发送；新的独立验收必须重新授权并建立发送前基线，不能换 RUN 绕过旧状态：
 
 ```bash
 target/debug/foxbot-host g3c-send-once \
