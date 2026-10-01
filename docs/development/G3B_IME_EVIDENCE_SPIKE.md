@@ -1,5 +1,7 @@
 # G3b：IME Evidence Spike
 
+> **已归档 / 不再阻塞 G3c（2026-10-01）**：用户明确实际运行无人值守、独占聊天界面。以下为旧人机共用假设下的研究记录；其中“必须证明 IME SAFE 才能开发发送”的要求已被[无人值守契约](G3B_UNATTENDED_EXECUTION.md)取代。实验事实保留，当前 send-gate 不再调用该 probe。
+
 - 日期：2026-10-01
 - 分支：`feat/g3b-ime-evidence-spike`
 - 状态：**SPIKE COMPLETE / NO AUTHORITATIVE CROSS-PROCESS SAFE SIGNAL**

@@ -93,14 +93,9 @@ UNREADABLE
 - 微信已知空输入占位文案不计为草稿；
 - 右侧发送/控制区域排除。
 
-因此 C05 目前不能标记为完整 ACCEPTED。尤其未覆盖：
+因此 C05 目前不能标记为完整 ACCEPTED。仍需验证文本存在但 Vision 漏识别，以及主题/字体/窗口布局使正文超出 ROI 的情况。
 
-- 中文输入法正在组字；
-- 文本存在但 Vision 漏识别；
-- 主题/字体/窗口布局使正文超出 ROI；
-- 用户在 preflight 与写入之间并发输入。
-
-这些在进入生产 AUTO_REPLY 前仍需专门解决。
+2026-10-01 用户明确实际使用为无人值守独占，人工并发输入和 IME 组字不在本期范围，不再阻塞 AUTO_REPLY 开发。具体变更见[无人值守执行说明](G3B_UNATTENDED_EXECUTION.md)。输入区残留和回读可靠性仍按实际通道验收。
 
 ## 6. 写入与回读
 
@@ -167,9 +162,9 @@ G3a 到此只冻结“测试级安全回填”。
 - current app-session re-check；
 - conversation / continuity re-check；
 - incoming revision re-check；
-- 人工输入 / IME ownership；
+- 显式暂停 / DeviceOwner 执行权；
 - draft 是否仍与 prepared outbound 完全相等；
 - pending / UNKNOWN outbound 检查；
 - 发送动作前最后一次 GUI ownership。
 
-G3b Gate 完成前，不实现或调用真实 send。
+G3b 已按[无人值守独占契约](G3B_UNATTENDED_EXECUTION.md)调整；下一步是 G3c 真实发送实现与验收，不再等待 IME 证明。本工具依然是测试级回填入口，本轮不更改其写入授权参数。

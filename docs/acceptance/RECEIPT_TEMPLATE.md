@@ -34,7 +34,7 @@
 | 私聊 / 群聊 / 回复对象规则 | 待填写 |
 | assisted / auto_suggest / auto_reply | 待填写 |
 | current_session / multi_session | 待填写 |
-| 共用设备 / 专用值守 | 待填写 |
+| 无人值守独占 / 开发交接 | 自动运行期间不人工操作；开发交接记录 pause/stop/resume |
 | GUI / OCR GUI / notification / official_api | 待填写 |
 | 系统语言、主题、字体、缩放、DPI、多屏 | 待填写 |
 | 权限状态、锁屏/后台与电源策略 | 待填写 |

@@ -316,6 +316,9 @@ pub enum Draft {
     Unreadable,
 }
 
+/// Fresh execution facts for an unattended, exclusively operated chat surface.
+/// Human co-editing and IME state are outside this contract; development handoff
+/// uses explicit host pause/resume, not input-activity inference.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LiveTarget {
     pub key: ConversationKey,
@@ -330,10 +333,6 @@ pub struct LiveTarget {
     pub draft: Draft,
     /// A fresh adapter observation reports changed message context during execution.
     pub conversation_changed: bool,
-    /// A false composing value is authoritative only when this evidence is true.
-    pub composition_verified: bool,
-    pub composing: bool,
-    pub user_active: bool,
     pub permitted: bool,
     pub frontmost: bool,
 }
@@ -351,9 +350,6 @@ impl LiveTarget {
     pub(crate) fn accepts(&self, action: &OutboundAction) -> bool {
         self.key == action.target
             && self.identity_epoch == action.identity_epoch
-            && self.composition_verified
-            && !self.composing
-            && !self.user_active
             && !self.conversation_changed
             && self.permitted
             && self.frontmost
@@ -386,9 +382,6 @@ pub enum SendGateBlocker {
     SurfaceMissing,
     NotFrontmost,
     ConversationChanged,
-    CompositionUnverified,
-    Composing,
-    UserActive,
     NotPermitted,
     DraftNotEmpty,
     DraftMismatch,

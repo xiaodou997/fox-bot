@@ -1,11 +1,12 @@
 import AppKit
-import CoreGraphics
 import Foundation
 import OCRKit
 import ProbeKit
 
 private struct NativeGateReport: Encodable {
-    let schemaVersion = "foxbot.macos-send-gate.v1"
+    let schemaVersion = "foxbot.macos-send-gate.v2"
+    let executionModel = "UNATTENDED_EXCLUSIVE"
+    let inputStatePolicy = "NOT_REQUIRED"
     let status: String
     let ready: Bool
     let blockers: [String]
@@ -15,10 +16,6 @@ private struct NativeGateReport: Encodable {
     let conversationResolved: Bool
     let conversationMatches: Bool
     let draftMatches: Bool
-    let recentUserInput: Bool
-    let compositionVerified: Bool
-    let composingState: String
-    let inputMethodWindowVisible: Bool
     let readOnly = true
     let rawTextIncluded = false
     let imageSaved = false
@@ -45,16 +42,6 @@ private func isHex64(_ value: String) -> Bool {
 
 private func wechatIsFrontmost() -> Bool {
     NSWorkspace.shared.frontmostApplication?.bundleIdentifier == TargetApp.wechat.bundleID
-}
-
-private func recentUserInput() -> Bool {
-    let types: [CGEventType] = [
-        .keyDown, .flagsChanged, .leftMouseDown, .rightMouseDown, .otherMouseDown, .scrollWheel
-    ]
-    let quiet = types
-        .map { CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: $0) }
-        .min() ?? 0
-    return quiet < 1.0
 }
 
 private func captureWithRetry(
@@ -84,10 +71,7 @@ private func blockedCaptureReport(frontmost: Bool) -> NativeGateReport {
         applicationSessionMatches: false,
         conversationResolved: false,
         conversationMatches: false,
-        draftMatches: false,
-        recentUserInput: recentUserInput(),
-        inputMethodWindowVisible: false,
-        composingVerifiedSafe: false
+        draftMatches: false
     )
     let decision = NativeSendGatePolicy.evaluate(facts)
     return NativeGateReport(
@@ -99,11 +83,7 @@ private func blockedCaptureReport(frontmost: Bool) -> NativeGateReport {
         applicationSessionMatches: facts.applicationSessionMatches,
         conversationResolved: facts.conversationResolved,
         conversationMatches: facts.conversationMatches,
-        draftMatches: facts.draftMatches,
-        recentUserInput: facts.recentUserInput,
-        compositionVerified: false,
-        composingState: "UNVERIFIED",
-        inputMethodWindowVisible: false
+        draftMatches: facts.draftMatches
     )
 }
 
@@ -168,23 +148,14 @@ struct SendGateMain {
             let draftMatches =
                 WeChatDraftPolicy.verified(expectedDraft, snapshot: first.draftSnapshot)
                 && WeChatDraftPolicy.verified(expectedDraft, snapshot: second.draftSnapshot)
-            let imeFacts = NativeIMEEvidenceProbe.collect(target: .wechat)
-            let imeDecision = IMEEvidencePolicy.evaluate(imeFacts)
-            let composingState = imeDecision.compositionVerified
-                ? (imeDecision.composing ? "COMPOSING" : "SAFE")
-                : "UNVERIFIED"
             let facts = NativeSendGateFacts(
                 captureReady: true,
-                frontmost: frontmost,
+                frontmost: wechatIsFrontmost(),
                 stableTwoReads: stable,
                 applicationSessionMatches: appMatches,
                 conversationResolved: resolved,
                 conversationMatches: conversationMatches,
-                draftMatches: draftMatches,
-                recentUserInput: imeFacts.recentUserInput,
-                inputMethodWindowVisible: imeFacts.inputMethodOnScreenWindowCount > 0,
-                composingVerifiedSafe:
-                    imeDecision.compositionVerified && !imeDecision.composing
+                draftMatches: draftMatches
             )
             let decision = NativeSendGatePolicy.evaluate(facts)
             emit(NativeGateReport(
@@ -196,14 +167,10 @@ struct SendGateMain {
                 applicationSessionMatches: facts.applicationSessionMatches,
                 conversationResolved: facts.conversationResolved,
                 conversationMatches: facts.conversationMatches,
-                draftMatches: facts.draftMatches,
-                recentUserInput: facts.recentUserInput,
-                compositionVerified: imeDecision.compositionVerified,
-                composingState: composingState,
-                inputMethodWindowVisible: facts.inputMethodWindowVisible
+                draftMatches: facts.draftMatches
             ))
         } catch {
-            emit(blockedCaptureReport(frontmost: frontmost))
+            emit(blockedCaptureReport(frontmost: wechatIsFrontmost()))
         }
     }
 }

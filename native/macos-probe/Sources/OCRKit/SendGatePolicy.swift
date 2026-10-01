@@ -8,11 +8,10 @@ public enum NativeSendGateBlocker: String, Codable, CaseIterable {
     case conversationUnresolved = "CONVERSATION_UNRESOLVED"
     case conversationMismatch = "CONVERSATION_MISMATCH"
     case draftMismatch = "DRAFT_MISMATCH"
-    case recentUserInput = "RECENT_USER_INPUT"
-    case inputMethodWindowVisible = "INPUT_METHOD_WINDOW_VISIBLE"
-    case composingUnverified = "COMPOSING_UNVERIFIED"
 }
 
+/// Execution facts for an unattended, exclusively operated chat surface.
+/// Input activity and IME composition are not part of this product contract.
 public struct NativeSendGateFacts: Equatable {
     public var captureReady: Bool
     public var frontmost: Bool
@@ -21,9 +20,6 @@ public struct NativeSendGateFacts: Equatable {
     public var conversationResolved: Bool
     public var conversationMatches: Bool
     public var draftMatches: Bool
-    public var recentUserInput: Bool
-    public var inputMethodWindowVisible: Bool
-    public var composingVerifiedSafe: Bool
 
     public init(
         captureReady: Bool,
@@ -32,10 +28,7 @@ public struct NativeSendGateFacts: Equatable {
         applicationSessionMatches: Bool,
         conversationResolved: Bool,
         conversationMatches: Bool,
-        draftMatches: Bool,
-        recentUserInput: Bool,
-        inputMethodWindowVisible: Bool,
-        composingVerifiedSafe: Bool
+        draftMatches: Bool
     ) {
         self.captureReady = captureReady
         self.frontmost = frontmost
@@ -44,9 +37,6 @@ public struct NativeSendGateFacts: Equatable {
         self.conversationResolved = conversationResolved
         self.conversationMatches = conversationMatches
         self.draftMatches = draftMatches
-        self.recentUserInput = recentUserInput
-        self.inputMethodWindowVisible = inputMethodWindowVisible
-        self.composingVerifiedSafe = composingVerifiedSafe
     }
 }
 
@@ -65,9 +55,6 @@ public enum NativeSendGatePolicy {
         if !facts.conversationResolved { blockers.append(.conversationUnresolved) }
         if !facts.conversationMatches { blockers.append(.conversationMismatch) }
         if !facts.draftMatches { blockers.append(.draftMismatch) }
-        if facts.recentUserInput { blockers.append(.recentUserInput) }
-        if facts.inputMethodWindowVisible { blockers.append(.inputMethodWindowVisible) }
-        if !facts.composingVerifiedSafe { blockers.append(.composingUnverified) }
         return NativeSendGateDecision(ready: blockers.isEmpty, blockers: blockers)
     }
 }

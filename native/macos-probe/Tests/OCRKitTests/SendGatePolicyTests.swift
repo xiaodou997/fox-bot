@@ -10,45 +10,59 @@ final class SendGatePolicyTests: XCTestCase {
             applicationSessionMatches: true,
             conversationResolved: true,
             conversationMatches: true,
-            draftMatches: true,
-            recentUserInput: false,
-            inputMethodWindowVisible: false,
-            composingVerifiedSafe: true
+            draftMatches: true
         )
     }
 
-    func testAllTrustedFactsAreRequiredForReady() {
+    func testUnattendedReadyNeedsNoInputStateEvidence() {
         let decision = NativeSendGatePolicy.evaluate(readyFacts())
         XCTAssertTrue(decision.ready)
         XCTAssertEqual(decision.blockers, [])
     }
 
-    func testUnverifiedCompositionFailsClosed() {
-        var facts = readyFacts()
-        facts.composingVerifiedSafe = false
-        let decision = NativeSendGatePolicy.evaluate(facts)
-        XCTAssertFalse(decision.ready)
-        XCTAssertEqual(decision.blockers, [.composingUnverified])
+    func testEveryExecutionFactStillBlocksIndependently() {
+        let cases: [(WritableKeyPath<NativeSendGateFacts, Bool>, NativeSendGateBlocker)] = [
+            (\.captureReady, .captureUnavailable),
+            (\.frontmost, .appNotFrontmost),
+            (\.stableTwoReads, .unstableSurface),
+            (\.applicationSessionMatches, .applicationSessionMismatch),
+            (\.conversationResolved, .conversationUnresolved),
+            (\.conversationMatches, .conversationMismatch),
+            (\.draftMatches, .draftMismatch)
+        ]
+        for (keyPath, blocker) in cases {
+            var facts = readyFacts()
+            facts[keyPath: keyPath] = false
+            let decision = NativeSendGatePolicy.evaluate(facts)
+            XCTAssertFalse(decision.ready, blocker.rawValue)
+            XCTAssertEqual(decision.blockers, [blocker])
+        }
     }
 
     func testMultipleUnsafeFactsAreAllReported() {
         var facts = readyFacts()
         facts.frontmost = false
         facts.draftMatches = false
-        facts.recentUserInput = true
         let decision = NativeSendGatePolicy.evaluate(facts)
         XCTAssertFalse(decision.ready)
         XCTAssertEqual(
             decision.blockers,
-            [.appNotFrontmost, .draftMismatch, .recentUserInput]
+            [.appNotFrontmost, .draftMismatch]
         )
     }
 
-    func testVisibleInputMethodWindowFailsClosed() {
-        var facts = readyFacts()
-        facts.inputMethodWindowVisible = true
+    func testMissingExecutionEvidenceNeverBecomesReady() {
+        let facts = NativeSendGateFacts(
+            captureReady: false,
+            frontmost: false,
+            stableTwoReads: false,
+            applicationSessionMatches: false,
+            conversationResolved: false,
+            conversationMatches: false,
+            draftMatches: false
+        )
         let decision = NativeSendGatePolicy.evaluate(facts)
         XCTAssertFalse(decision.ready)
-        XCTAssertEqual(decision.blockers, [.inputMethodWindowVisible])
+        XCTAssertEqual(decision.blockers, NativeSendGateBlocker.allCases)
     }
 }

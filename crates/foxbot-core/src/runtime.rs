@@ -798,15 +798,6 @@ impl Runtime {
         if live.conversation_changed {
             blockers.push(SendGateBlocker::ConversationChanged);
         }
-        if !live.composition_verified {
-            blockers.push(SendGateBlocker::CompositionUnverified);
-        }
-        if live.composing {
-            blockers.push(SendGateBlocker::Composing);
-        }
-        if live.user_active {
-            blockers.push(SendGateBlocker::UserActive);
-        }
         if !live.permitted {
             blockers.push(SendGateBlocker::NotPermitted);
         }

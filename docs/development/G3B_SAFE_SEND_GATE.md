@@ -1,13 +1,15 @@
 # G3b：Safe Send Gate
 
 - 日期：2026-10-01
-- 状态：**CORE / HOST PASS；MC-WX NATIVE SEND-READY BLOCKED**
+- 状态：**UNATTENDED EXCLUSIVE CONTRACT；G3c 真实发送待实现/验收**
 - 前置：[G2 Freeze](../acceptance/receipts/2026-09-30-g2-freeze.md) · [G3a Draft Writer](G3A_DRAFT_WRITER.md)
 - 回执：[2026-10-01 G3b](../acceptance/receipts/2026-10-01-g3b-safe-send-gate.md)
 
 ## 1. 目标
 
 G3b 不负责发送，而是把“现在是否允许进入发送动作”变成独立、可测试、无副作用的事实门禁。
+
+2026-10-01 按用户确认的[无人值守独占契约](G3B_UNATTENDED_EXECUTION.md)修订：不考虑人工同时操作聊天界面，IME 和人工活动不再作为前置证明。
 
 ~~~text
 PREPARED outbound
@@ -36,16 +38,14 @@ BEFORE_SEND
 - layout revision；
 - draft；
 - conversation_changed；
-- `composition_verified` 与 composing；
-- user_active；
 - permitted；
 - frontmost。
 
-`composing=false` 不再自动代表安全；只有 `composition_verified=true && composing=false` 才满足该项。
+`LiveTarget` 不再包含 IME/人工活动字段。这里没有把 unknown 写成 SAFE，而是从产品契约中删除不适用的人机共编条件。
 
 ### BEFORE_FILL
 
-至少检查 host pause、action state、session revision、identity/profile、attempt budget、prior EXECUTING/SUBMITTED/UNKNOWN、target、application-session、conversation-surface、window/editor、frontmost、conversation_changed、composition_verified/composing、user_active、permission 与 draft empty。
+至少检查 host pause、action state、session revision、identity/profile、attempt budget、prior EXECUTING/SUBMITTED/UNKNOWN、target、application-session、conversation-surface、window/editor、frontmost、conversation_changed、permission 与 draft empty。
 
 ### BEFORE_SEND
 
@@ -104,47 +104,21 @@ synthetic_outgoing   = 0
 - application-session exact match；
 - conversation fingerprint resolved + exact match；
 - expected draft 两次 OCR exact-match；
-- 最近 1 秒没有 key/mouse/scroll 人工输入；
+- 捕获后重新检查微信仍是前台；不查询 IME、候选窗或键鼠静默时间；
 - 无 screenshot 保存、无网络、无 write/send。
 
 针对瞬时 focused-surface 读取失败，只允许最多 3 次、200ms 间隔的有界只读重试；仍无法稳定时继续 BLOCKED。
 
-## 7. 当前唯一真机 blocker：IME composing
+## 7. IME 结论的适用范围已撤销
 
-微信 4.1.13 在本机：
+旧版 Gate 曾在其它目标/内容事实通过时，仅因 `COMPOSING_UNVERIFIED` 阻断；该真实记录保留在[旧回执](../acceptance/receipts/2026-10-01-g3b-safe-send-gate.md)，不能重写成新版 PASS。
 
-- app AX root 没有 `AXFocusedUIElement`；
-- system-wide AX 同样返回 focused UI element noValue；
-- 无可读 `AXSelectedTextRange` / marked-text 语义节点。
+新规则按无人值守独占运行，不再要求跨进程输入法状态证明；独立 [IME Spike](G3B_IME_EVIDENCE_SPIKE.md) 归档，不在主路径调用，也不再影响一期自动回复支持范围。
 
-因此不能把“没有看到 composing”写成 `composing=false`。
-
-最终 no-send gate：
-
-~~~text
-application_session_matches  true
-conversation_matches         true
-conversation_resolved        true
-draft_matches                true
-frontmost                    true
-stable_two_reads             true
-recent_user_input            false
-write_operations             0
-send_operations              0
-ready                        false
-blockers                     COMPOSING_UNVERIFIED
-~~~
-
-这是预期 fail-closed 结果。
+native 报告升级为 `foxbot.macos-send-gate.v2`，声明 `execution_model=UNATTENDED_EXCLUSIVE` 和 `input_state_policy=NOT_REQUIRED`。旧版的 recent_user_input / composition_verified / composing_state / input_method_window_visible 字段移除。NOT_REQUIRED 不表示探测到 SAFE；单测 READY 也不表示已经真实发送。
 
 ## 8. 下一步
 
-IME Evidence Spike 已完成，结论见 [G3B_IME_EVIDENCE_SPIKE.md](G3B_IME_EVIDENCE_SPIKE.md)。当前没有找到可用于微信 4.1.13 的 authoritative cross-process composition-safe 证据，因此 G3c Real Send **不能开始**。
+进入 G3c-1 当前会话单条发送闭环：把现有测试级 Draft Writer 接入 Runtime，回填后复核文本和目标，调用应用专属单次发送，再匹配新增己方消息生成回执。先用固定测试回复，后接真实模型；不混入多会话导航和新的 IME 研究。
 
-可继续研究：
-
-1. 是否存在目标微信版本可用的系统文本输入状态证据；
-2. 若无法取得，是否将自动发送支持限制到能够证明 composition-safe 的版本/输入通道；
-3. 不能用“静默 1 秒”“当前输入源名称”或“候选窗没看到”单独替代 composing 事实。
-
-任何方案都必须先在 gate-only 模式验证，再开放 send action。
+本轮没有新增 Enter / Return、发送按钮 click、真实 send channel 或写入授权开关；真实 C07/C08 仍待实现和指定测试会话验收。

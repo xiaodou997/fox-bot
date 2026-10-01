@@ -3,7 +3,7 @@
 - 编号：FB-MATRIX-001
 - 日期：2026-10-01
 - 适用设计：[FB-BASELINE-001](../design/BASELINE.md)
-- 状态：完整聊天适配器仍未实现/未验收；macOS 微信 current-session 的 G2 只读链已完成真实 Freeze，G3a 已取得测试级真实 draft fill / OCR verify，G3b Core/Host safe-send gate 已 PASS，IME Evidence Spike 已完成；native send-ready 仍因缺少 authoritative composition-safe 证据而 BLOCKED。发送、导航与恢复继续独立验收。
+- 状态：macOS 微信 current-session 的 G2 读取已真实 Freeze，G3a 已取得测试级真实回填/回读；G3b 已改为无人值守独占契约，IME/人工活动不再阻断开发。C07/C08 发送/验证尚未实现和验收，下一步 G3c-1；导航与恢复另行验收。
 - 来源：[固定提交与审计记录](../references/UPSTREAM_AUDIT.md)
 
 ## 1. 状态语义
@@ -28,7 +28,7 @@
 | AD-QQ | Android / QQ | PRIMARY | 无障碍 resource-id / text；气泡布局用于方向解析 | ACTION_SET_TEXT / 粘贴回填，不发送 | PLANNED；NOT_RUN |
 | AD-X | Android / X 私信 | PRIMARY | Compose 节点 contentDescription 解析 | 通用输入框回填，不发送 | PLANNED；NOT_RUN |
 | AD-FS | Android / 飞书 | PRIMARY | 无障碍气泡矩形/状态＋本地 ML Kit OCR | 通用输入框回填，不发送 | PLANNED；NOT_RUN |
-| MC-WX | macOS / 微信 | PRIMARY | CaptureApp → 窗口截图与 Apple Vision 路径 | CGEvent Unicode 测试回填，不发送 | G2 READ FREEZE；G3a C06 REAL PASS；G3b CORE/HOST PASS；IME SPIKE COMPLETE / SEND BLOCKED；C07～C10 NOT_RUN |
+| MC-WX | macOS / 微信 | PRIMARY | CaptureApp → 窗口截图与 Apple Vision 路径 | CGEvent Unicode 测试回填，不发送 | G2 READ FREEZE；G3a C06 REAL PASS；G3b UNATTENDED CONTRACT；IME ARCHIVED；C07～C10 NOT_RUN |
 | MC-QQ | macOS / QQ | PRIMARY | AXApp → AX 文本/类属性解析 | AX 设值及输入事件降级；不发送 | PLANNED；NOT_RUN |
 | WIN-WX | Windows / 微信 | PRIMARY | 上游 README 描述 WGC＋RapidOCR | app/fill.py 坐标定位＋剪贴板粘贴；不发送 | PLANNED；NOT_RUN |
 | AD-WX | Android / 微信 | PROBE_ONLY | 上游主动禁用微信入口；旧适配代码仍保留 | 不可据此宣称能够采集、回填或发送 | PLANNED；NOT_RUN；自动发送关闭 |
@@ -57,11 +57,11 @@ QQ、X、飞书和微信的具体账号、私聊/群聊、语言与版本支持�
 | C02 | identify | 确认账号绑定、会话和目标窗口/通知动作 | 不能只凭同名联系人或旧句柄写入。 |
 | C03 | read | 提供文字、顺序、来源、可见范围和不完整标记 | 不能声称已取得未显示的全部历史。 |
 | C04 | route_group | 区分发言人、可靠 mention、引用和回复对象 | 不能把全部消息都压成“对方”。 |
-| C05 | draft_read | 区分空草稿、已有草稿、读取失败和输入法组字 | 不能把不可读当作空白。 |
+| C05 | draft_read | 区分空草稿、残留草稿和读取失败；不要求 IME 证明 | 不能把不可读当作空白。 |
 | C06 | fill | 定位编辑器并可核对写入的内容 | 不能因 API 返回成功就执行发送。 |
 | C07 | send | 在独立执行校验后触发目标应用的发送行为 | 不能在公共核心统一假定 Enter 就是发送。 |
 | C08 | verify | 记录提交/己方输出/送达等不同级别的效果证据 | 不能把超时当作未发出并盲目换通道重发。 |
-| C09 | navigate | 发现并进入授权会话，进入后重新校验身份 | 不能抢占用户输入或把前台切换当身份确认。 |
+| C09 | navigate | 发现并进入授权会话，进入后重新校验身份 | 显式暂停时不能导航；不能把前台切换当身份确认。 |
 | C10 | recover | 重启、网络异常、账号变化后恢复与对账 | 不能重放全部历史或重新发送 UNKNOWN 任务。 |
 | C11 | notify_reply | 通知提供正文、会话证据和可用回复动作 | 没有实测前不能假定目标应用具备此能力。 |
 
@@ -220,8 +220,8 @@ known_gaps:
 | 对象 | 实现 | 本轮状态 | 未覆盖 / 限制 |
 | --- | --- | --- | --- |
 | 微信 AX 编辑器语义 | PROBED / NOT AVAILABLE | 当前微信 4.1.13 focused window 只暴露约 5 个 AX 节点；无 AXTextArea / AXTextField、无 settable AXValue、点击输入区后也没有 AXFocusedUIElement | 不能用 AXValue 精确读取/写草稿 |
-| C05 draft_read | IMPLEMENTED / HEURISTIC | 输入区局部 Vision 可识别可见草稿；已知空输入占位文案会排除；OCR partial 记 UNREADABLE；真实已有草稿返回 NONEMPTY 并拒绝覆盖 | 不能可靠检测 IME 组字、隐藏/不可见草稿；因此不标 C05 ACCEPTED |
-| C06 fill | IMPLEMENTED / REAL PASS / TEST ONLY | 独立 `foxbot-macos-draft`：要求微信系统前台、唯一 focused window、exact conversation fingerprint、显式 `--allow-heuristic-empty-test`；空草稿时写入唯一测试文本并 OCR 回读完全匹配 | 生产自动模式仍关闭；布局/主题/IME/用户并发输入需扩展验收 |
+| C05 draft_read | IMPLEMENTED / HEURISTIC | 输入区局部 Vision 可识别可见草稿；已知空输入占位文案会排除；OCR partial 记 UNREADABLE；真实已有草稿返回 NONEMPTY 并拒绝覆盖 | 隐藏/不可见草稿与 OCR 漏识别仍需按实际场景验证；不标 C05 ACCEPTED，IME 不再是验收项 |
+| C06 fill | IMPLEMENTED / REAL PASS / TEST ONLY | 独立 `foxbot-macos-draft`：要求微信系统前台、唯一 focused window、exact conversation fingerprint、显式 `--allow-heuristic-empty-test`；空草稿时写入唯一测试文本并 OCR 回读完全匹配 | 生产自动模式仍待 G3c 接入；布局/主题和支持文本需验收，不再要求人工并发输入 |
 | 已有草稿保护 | REAL PASS | 真实 NONEMPTY 草稿下返回 `DRAFT_NOT_EMPTY_OR_UNREADABLE`，`write_attempted=false`，`send_attempted=false` | 只证明可见 OCR 草稿 |
 | 发送动作 | NOT IMPLEMENTED | report 固定 `send_attempted=false`；代码无 Enter/点击发送路径 | C07/C08 全部留给 G3b/G3c |
 
@@ -231,16 +231,16 @@ known_gaps:
 
 | 对象 | 实现 | 本轮状态 | 未覆盖 / 限制 |
 | --- | --- | --- | --- |
-| Runtime BEFORE_FILL | IMPLEMENTED / PASS | 无副作用 preview 检查 host pause、action/revision/profile、attempt budget、prior UNKNOWN/SUBMITTED、target/identity、app-session、conversation surface、frontmost、conversation_changed、composition_verified/composing、user_active、permission、draft empty | 需要具体平台提供可信 live facts |
+| Runtime BEFORE_FILL | IMPLEMENTED / PASS | 无副作用 preview 检查 host pause、action/revision/profile、attempt budget、prior UNKNOWN/SUBMITTED、target/identity、app-session、conversation surface、frontmost、conversation_changed、permission、draft empty；不要求 IME/人工活动 | 需要具体平台提供可信 live facts |
 | Runtime BEFORE_SEND | IMPLEMENTED / PASS | fill 后必须同 app-session / conversation surface / window / editor / layout，且 draft exact-match outbound text；失败时 dispatch 进入 UNKNOWN 且不调用 send | 本阶段不触发真实 send |
 | Gate-only smoke | PASS | 两阶段均 allowed；action 仍 PREPARED；fill_calls=0、send_calls=0、outgoing=0 | synthetic only |
 | Host GUI ownership | PASS | queued incoming / manual own output / stop / DeviceOwner inode replacement 均在 fill/send 前阻断 | 多设备全局排他仍不在一期内 |
-| MC-WX native facts | REAL NO-SEND PARTIAL PASS | app-session=true、conversation=true、draft=true、frontmost=true、stable-two-reads=true、recent-user-input=false；write/send ops=0 | `COMPOSING_UNVERIFIED` 为唯一 blocker |
-| C07 send | NOT IMPLEMENTED | 无 Enter/Return、无发送按钮 click | G3c 继续 BLOCKED |
+| MC-WX native facts | IMPLEMENTED / 新版真机 NOT_RUN | v2 按独占契约检查七项执行事实；不采集 IME/键鼠活动；旧版真机其它事实通过的记录保留 | 旧回执不自动转为新版 PASS；write/send ops 仍为 0 |
+| C07 send | NOT IMPLEMENTED | 无 Enter/Return、无发送按钮 click | 下一开发项 G3c-1，不再等待 IME |
 
-[G3b 说明](../development/G3B_SAFE_SEND_GATE.md)与[回执](../acceptance/receipts/2026-10-01-g3b-safe-send-gate.md)记录规则与真机结果。Gate BLOCKED 是正确安全结果，不得通过把 IME unknown 当 false 来升级为 READY。
+当前规则见[G3b 说明](../development/G3B_SAFE_SEND_GATE.md)和[无人值守契约](../development/G3B_UNATTENDED_EXECUTION.md)。[旧回执](../acceptance/receipts/2026-10-01-g3b-safe-send-gate.md)保留历史结果；移除不适用条件不等于将旧真机 BLOCKED 改成 PASS。
 
-### G3b IME Evidence Spike
+### G3b IME Evidence Spike（归档；不再是执行门禁）
 
 | 信号 | 分类 | 真机结果 | 能否证明 SAFE |
 | --- | --- | --- | --- |
@@ -249,9 +249,9 @@ known_gaps:
 | AXSelectedTextRange | CONTEXT_ONLY | 微信目标元素不可用 | 否；选区也不是 marked-range |
 | TIS current input source | CONTEXT_ONLY | 可识别当前输入源及对应输入法进程 | 否；只说明输入源 |
 | recent key/mouse/scroll | POSITIVE_BLOCKER | 可检测最近输入 | 只能阻断，静默不能证明 SAFE |
-| input-method on-screen window | POSITIVE_BLOCKER | 当前非组字基线为 0；接入 send-gate 作为额外 blocker | 只能阻断；absence 不证明 SAFE |
+| input-method on-screen window | POSITIVE_BLOCKER | 历史非组字基线为 0；旧版曾接入 send-gate，现已移除 | 只能阻断；absence 不证明 SAFE |
 | NSTextInputClient hasMarkedText/markedRange | AUTHORITATIVE（仅 receiver 自身） | 无法从另一个进程取得微信 receiver | 当前不可用 |
 
-新增共享 `NativeIMEEvidenceProbe` 与 `foxbot-macos-ime-evidence`。send-gate 直接消费相同证据；当前 authoritative state 始终 `UNAVAILABLE`，因此不会因为 heuristic 信号“看起来正常”而 READY。
+保留独立 `NativeIMEEvidenceProbe` 与 `foxbot-macos-ime-evidence` 及原实验结果，但 send-gate 已不再调用。上表为历史实验分类，不是当前生产要求；不伪造 authoritative SAFE，也不再要求取得它。
 
 [IME Spike 说明](../development/G3B_IME_EVIDENCE_SPIKE.md)与[回执](../acceptance/receipts/2026-10-01-g3b-ime-evidence-spike.md)记录完整实验。

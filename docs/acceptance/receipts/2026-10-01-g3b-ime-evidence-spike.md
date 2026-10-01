@@ -1,5 +1,7 @@
 # G3b IME Evidence Spike 回执
 
+> **历史回执**：保留当时的实验和 BLOCKED 结果，不改写为 PASS。2026-10-01 用户明确无人值守独占运行，IME 不再是发送前置条件；本文的后续开发阻断结论已由[新契约](../../development/G3B_UNATTENDED_EXECUTION.md)取代，独立实验工具退出正常执行路径。
+
 - 日期：2026-10-01
 - 分支：`feat/g3b-ime-evidence-spike`
 - 基线：`eeee63f49c52507e75eb9e0d51275984c952c2f9`

@@ -1,5 +1,7 @@
 # G3b Safe Send Gate 回执
 
+> **旧版规则回执**：以下是旧 Gate 的真实观察，不是新版验收。2026-10-01 按用户确认的[无人值守独占契约](../../development/G3B_UNATTENDED_EXECUTION.md)移除 IME/人工活动条件；旧 `COMPOSING_UNVERIFIED` 不再阻塞 G3c 开发。原始 BLOCKED 保留，不伪造新版真机 PASS。
+
 - 日期：2026-10-01
 - 分支：`feat/g3b-safe-send-gate`
 - 基线：`main@3fcfbbc0a68dbbc77b0384f70a6795ee0479e70b`

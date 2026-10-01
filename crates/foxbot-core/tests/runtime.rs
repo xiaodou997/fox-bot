@@ -528,7 +528,7 @@ fn successful_send_is_observed_not_claimed_delivered_and_cannot_repeat() {
 }
 
 #[test]
-fn safe_send_gate_preview_is_side_effect_free() {
+fn unattended_send_gate_needs_only_execution_facts_and_has_no_side_effects() {
     let (_dir, mut runtime, binding) = setup();
     let action_id = prepared(&mut runtime, &binding.key);
     let channel = MockChannel::new(&binding.key);
@@ -560,7 +560,7 @@ fn safe_send_gate_preview_is_side_effect_free() {
 
 #[test]
 fn safe_send_gate_reports_preflight_blockers_without_native_calls() {
-    for case in 0..12 {
+    for case in 0..11 {
         let (_dir, mut runtime, binding) = setup();
         let action_id = prepared(&mut runtime, &binding.key);
         let channel = MockChannel::new(&binding.key);
@@ -587,32 +587,28 @@ fn safe_send_gate_reports_preflight_blockers_without_native_calls() {
                 SendGateBlocker::ConversationChanged
             }
             5 => {
-                live.composition_verified = false;
-                SendGateBlocker::CompositionUnverified
-            }
-            6 => {
-                live.composing = true;
-                SendGateBlocker::Composing
-            }
-            7 => {
-                live.user_active = true;
-                SendGateBlocker::UserActive
-            }
-            8 => {
                 live.permitted = false;
                 SendGateBlocker::NotPermitted
             }
-            9 => {
-                live.draft = Draft::Text("existing user draft".into());
+            6 => {
+                live.draft = Draft::Text("unowned leftover draft".into());
                 SendGateBlocker::DraftNotEmpty
             }
-            10 => {
+            7 => {
                 live.key.conversation = "other-conversation".into();
                 SendGateBlocker::TargetMismatch
             }
-            _ => {
+            8 => {
                 live.identity_epoch += 1;
                 SendGateBlocker::IdentityEpochMismatch
+            }
+            9 => {
+                live.draft = Draft::Unreadable;
+                SendGateBlocker::DraftNotEmpty
+            }
+            _ => {
+                live.editor_ref.clear();
+                SendGateBlocker::SurfaceMissing
             }
         };
         let gate = runtime
@@ -662,7 +658,7 @@ fn safe_send_gate_rechecks_surface_and_exact_draft_after_fill() {
                 SendGateBlocker::SurfaceChanged
             }
             5 => {
-                after.draft = Draft::Text("human edited draft".into());
+                after.draft = Draft::Text("unexpected readback text".into());
                 SendGateBlocker::DraftMismatch
             }
             _ => {
@@ -717,7 +713,51 @@ fn safe_send_gate_detects_new_revision_and_host_pause_before_gui_work() {
 }
 
 #[test]
-fn live_identity_draft_permission_and_composition_guards() {
+fn developer_pause_invalidates_old_action_and_resume_only_allows_fresh_work() {
+    let (_dir, mut runtime, binding) = setup();
+    let action_id = prepared(&mut runtime, &binding.key);
+    let mut channel = MockChannel::new(&binding.key);
+    runtime.set_host_paused(true).unwrap();
+
+    let gate = runtime
+        .preview_before_fill_gate(&action_id, 1, &channel.live)
+        .unwrap();
+    assert!(!gate.allowed);
+    assert!(gate.blockers.contains(&SendGateBlocker::HostPaused));
+    assert_eq!(runtime.action(&action_id).unwrap().1, ActionState::Stale);
+    assert!(matches!(
+        runtime.dispatch(&action_id, 1, &mut channel),
+        Err(Error::Stale)
+    ));
+    assert_eq!(channel.fill_calls, 0);
+    assert_eq!(channel.send_calls, 0);
+
+    runtime.set_host_paused(false).unwrap();
+    assert!(matches!(
+        runtime.dispatch(&action_id, 2, &mut channel),
+        Err(Error::Stale)
+    ));
+    assert_eq!(channel.fill_calls, 0);
+    assert_eq!(channel.send_calls, 0);
+
+    incoming(&mut runtime, &binding.key, "after-dev-resume", 2);
+    let request_id = ready(&mut runtime, &binding.key, 2);
+    let fresh_action = runtime.prepare_send(&request_id, 2, false).unwrap();
+    assert_eq!(
+        runtime.dispatch(&fresh_action, 2, &mut channel).unwrap(),
+        ActionState::VerifiedOutgoing
+    );
+    assert_eq!(channel.fill_calls, 1);
+    assert_eq!(channel.send_calls, 1);
+    assert!(matches!(
+        runtime.dispatch(&fresh_action, 3, &mut channel),
+        Err(Error::Stale)
+    ));
+    assert_eq!(channel.send_calls, 1);
+}
+
+#[test]
+fn unattended_dispatch_preserves_identity_draft_permission_and_focus_guards() {
     for case in 0..7 {
         let (_dir, mut runtime, binding) = setup();
         let action = prepared(&mut runtime, &binding.key);
@@ -726,9 +766,9 @@ fn live_identity_draft_permission_and_composition_guards() {
             0 => channel.live.key.account_binding = "another-account".into(),
             1 => channel.live.key.conversation = "another-conversation".into(),
             2 => channel.live.identity_epoch += 1,
-            3 => channel.live.draft = Draft::Text("用户草稿".into()),
+            3 => channel.live.draft = Draft::Text("未归属本任务的残留草稿".into()),
             4 => channel.live.draft = Draft::Unreadable,
-            5 => channel.live.composing = true,
+            5 => channel.live.frontmost = false,
             _ => channel.live.permitted = false,
         }
         assert_eq!(

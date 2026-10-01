@@ -93,9 +93,6 @@ impl MockChannel {
                 layout_revision: 1,
                 draft: Draft::Empty,
                 conversation_changed: false,
-                composition_verified: true,
-                composing: false,
-                user_active: false,
                 permitted: true,
                 frontmost: true,
             },
@@ -130,7 +127,7 @@ impl MessageChannel for MockChannel {
             self.live.conversation_changed = true;
         }
         if self.fault == Fault::EditAfterFill {
-            self.live.draft = Draft::Text("synthetic human edit".into());
+            self.live.draft = Draft::Text("synthetic readback mismatch".into());
         }
         Ok(())
     }
