@@ -38,7 +38,7 @@ pub struct MessageSignature {
     pub continuity_digest: Option<String>,
 }
 impl MessageSignature {
-    fn same_context(&self, other: &Self) -> bool {
+    pub(crate) fn same_context(&self, other: &Self) -> bool {
         self.continuity_digest.is_some()
             && self.continuity_digest == other.continuity_digest
             && self.direction == other.direction
@@ -63,7 +63,7 @@ pub struct NativeSendObservation {
     pub evidence_revision: Option<String>,
 }
 impl NativeSendObservation {
-    fn same_messages(&self, other: &Self) -> bool {
+    pub(crate) fn same_messages(&self, other: &Self) -> bool {
         self.messages.len() == other.messages.len()
             && self
                 .messages
@@ -71,7 +71,7 @@ impl NativeSendObservation {
                 .zip(&other.messages)
                 .all(|(a, b)| a.same_context(b))
     }
-    fn validate(&self) -> Result<()> {
+    pub(crate) fn validate(&self) -> Result<()> {
         fn hash(value: &str) -> bool {
             value.len() == 64
                 && value
@@ -112,7 +112,7 @@ impl NativeSendObservation {
             && self.application_session == binding.application_session_fingerprint
             && self.conversation == binding.conversation_fingerprint
     }
-    fn same_surface(&self, other: &Self) -> bool {
+    pub(crate) fn same_surface(&self, other: &Self) -> bool {
         self.application_session == other.application_session
             && self.conversation == other.conversation
             && self.window_ref == other.window_ref
@@ -122,6 +122,19 @@ impl NativeSendObservation {
     }
 }
 
+#[derive(Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct NativeReadMessage {
+    pub text: String,
+    pub direction: String,
+    pub complete: bool,
+}
+
+pub(crate) struct NativeReadFrame {
+    pub observation: NativeSendObservation,
+    pub messages: Vec<NativeReadMessage>,
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct WorkerReply {
@@ -129,6 +142,7 @@ struct WorkerReply {
     id: u64,
     status: String,
     observation: Option<NativeSendObservation>,
+    messages: Option<Vec<NativeReadMessage>>,
     write_attempted: bool,
     send_attempted: bool,
     verified_outgoing: bool,
@@ -237,8 +251,9 @@ impl Worker {
             .map_err(|_| HostError::NativeWorker)?;
         let reply: WorkerReply =
             serde_json::from_slice(&data).map_err(|_| HostError::NativeWorker)?;
-        if reply.schema_version != "foxbot.native-send-worker.v3"
+        if reply.schema_version != "foxbot.native-send-worker.v4"
             || reply.id != id
+            || (command != "read" && reply.messages.is_some())
             || (command != "fill" && reply.write_attempted)
             || (command != "send" && reply.send_attempted)
             || (reply.verified_outgoing && !matches!(command, "send" | "reconcile"))
@@ -266,6 +281,7 @@ impl Drop for Worker {
 
 #[derive(Default, Serialize)]
 pub struct NativeSendStats {
+    pub read_requests: u32,
     pub inspect_requests: u32,
     pub fill_requests: u32,
     pub send_requests: u32,
@@ -333,6 +349,51 @@ impl<'a> NativeSendChannel<'a> {
         }
         Ok(observation)
     }
+    pub(crate) fn read_messages(&mut self) -> Result<NativeReadFrame> {
+        self.owner.verify()?;
+        self.stats.read_requests += 1;
+        let reply = self.worker.request("read", None, None)?;
+        self.stats.last_status = reply.status.clone();
+        if reply.status != "OBSERVED" {
+            return Err(HostError::Untrusted);
+        }
+        let observation = reply.observation.ok_or(HostError::Untrusted)?;
+        let messages = reply.messages.ok_or(HostError::Untrusted)?;
+        if !observation.matches_binding(&self.binding)
+            || !observation.frontmost
+            || messages.len() != observation.messages.len()
+            || messages.iter().zip(&observation.messages).any(|(m, s)| {
+                m.text.trim().is_empty()
+                    || m.text.len() > 16_384
+                    || !m.complete
+                    || !s.complete
+                    || !matches!(m.direction.as_str(), "ME" | "THEM")
+                    || m.direction != s.direction
+                    || format!("{:x}", Sha256::digest(m.text.as_bytes())) != s.digest
+                    || Some(format!(
+                        "{:x}",
+                        Sha256::digest(crate::native_bridge::continuity_text(&m.text).as_bytes())
+                    )) != s.continuity_digest
+            })
+        {
+            return Err(HostError::Untrusted);
+        }
+        Ok(NativeReadFrame {
+            observation,
+            messages,
+        })
+    }
+
+    /// Bind dispatch to the exact context that produced the reply, not the first post-model read.
+    pub(crate) fn pin_context(&mut self, observation: NativeSendObservation) -> Result<()> {
+        observation.validate()?;
+        if !observation.matches_binding(&self.binding) {
+            return Err(HostError::Untrusted);
+        }
+        self.baseline = Some(observation);
+        Ok(())
+    }
+
     fn live(&self, observation: &NativeSendObservation) -> LiveTarget {
         let draft = match (observation.draft_state.as_str(), &observation.draft_text) {
             ("EMPTY_HEURISTIC", Some(t)) if t.is_empty() => Draft::Empty,
@@ -351,7 +412,7 @@ impl<'a> NativeSendChannel<'a> {
             conversation_changed: self
                 .baseline
                 .as_ref()
-                .is_some_and(|b| !b.same_messages(observation)),
+                .is_some_and(|b| !b.same_surface(observation) || !b.same_messages(observation)),
             permitted: observation.matches_binding(&self.binding),
             frontmost: observation.frontmost,
         }

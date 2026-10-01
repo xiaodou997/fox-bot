@@ -13,10 +13,11 @@ private struct Request: Decodable {
 }
 
 private struct Reply: Encodable {
-    let schemaVersion = "foxbot.native-send-worker.v3"
+    let schemaVersion = "foxbot.native-send-worker.v4"
     let id: UInt64
     var status: String
     var observation: SendObservation?
+    var messages: [NativeReadMessage]?
     var writeAttempted = false
     var sendAttempted = false
     var verifiedOutgoing = false
@@ -44,7 +45,14 @@ private func emit(_ reply: Reply) {
     let encoder = JSONEncoder()
     encoder.keyEncodingStrategy = .convertToSnakeCase
     encoder.outputFormatting = [.sortedKeys]
-    guard let data = try? encoder.encode(reply) else { return }
+    guard var data = try? encoder.encode(reply) else { return }
+    if data.count > 65_536 {
+        var bounded = Reply(id: reply.id, status: "PAYLOAD_TOO_LARGE")
+        bounded.writeAttempted = reply.writeAttempted
+        bounded.sendAttempted = reply.sendAttempted
+        guard let fallback = try? encoder.encode(bounded) else { return }
+        data = fallback
+    }
     FileHandle.standardOutput.write(data)
     FileHandle.standardOutput.write(Data([10]))
 }
@@ -129,9 +137,12 @@ struct SendMain {
             do {
                 if request.command == "warmup" {
                     reply.status = VisionOCR.warmup().succeeded ? "WARMED" : "WARMUP_FAILED"
-                } else if request.command == "inspect" {
-                    let (_, snapshot) = try await capture()
+                } else if ["inspect", "read"].contains(request.command) {
+                    let (raw, snapshot) = try await capture()
                     reply.observation = snapshot
+                    if request.command == "read" {
+                        reply.messages = WeChatSendPolicy.readMessages(raw.chatSnapshot)
+                    }
                     reply.status = "OBSERVED"
                 } else if ["fill", "send", "reconcile"].contains(request.command) {
                     guard let expected = request.expected, let text = request.text,

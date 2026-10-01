@@ -252,6 +252,17 @@ known_gaps:
 
 实现与范围见[G3c-1 说明](../development/G3C1_SINGLE_REAL_SEND.md)。[收口回执](../acceptance/receipts/2026-10-01-g3c1-closeout.md)记录 853208 自动完成及重放零发送、Keychain 超时和历史 OCR 空格修复，13/13 回归通过（152/61/116）。G3c-1 在当前测试范围收口；真实模型、持续 AUTO_REPLY、多会话不继承本次 PASS。
 
+### G3c-2 单次真实消息与 HTTP 回复联调
+
+| 对象 | 实现 | 边界 |
+| --- | --- | --- |
+| 原生私有 read | IMPLEMENTED | 原文、方向与签名同一解析投影；仅私有 IPC，公开输出脱敏 |
+| arm / once | IMPLEMENTED | 不回填历史，仅处理一个新增 incoming；加密账本与先落盘的 generation claim |
+| HTTP 回复与发送 | IMPLEMENTED | 复用 Chat Completions / BusinessV1，模型返回后重检上下文；真实模型验收待配置 |
+| 重放与拒绝分支 | IMPLEMENTED | 不再调用模型/发送；UNKNOWN只读核对；超长/多行不写入、不截断 |
+
+详细步骤见[G3c-2 联调说明](../development/G3C2_REAL_REPLY.md)。离线协议测试不能自动提升为真实模型或持续值守 PASS。
+
 ### G3b IME Evidence Spike（归档；不再是执行门禁）
 
 | 信号 | 分类 | 真机结果 | 能否证明 SAFE |

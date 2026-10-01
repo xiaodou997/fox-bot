@@ -48,6 +48,7 @@ macOS 微信 G2 真实读取链已完成 Freeze；G3a 已证明测试级草稿�
 | [G3b 无人值守调整回执](acceptance/receipts/2026-10-01-g3b-unattended-execution.md) | 固定代码提交，13/13 集成检查、Rust 137 / Python 61 / Swift 97；未执行真实发送 |
 | [G3c-1 当前私聊单条真实发送](development/G3C1_SINGLE_REAL_SEND.md) | Runtime 加密待发任务、原生单次写入/点击、回执序列关联与只读重放核对 |
 | [G3c-1 收口回执](acceptance/receipts/2026-10-01-g3c1-closeout.md) | 新任务自动 VERIFIED_OUTGOING，同 RUN 重放零原生调用；Keychain 超时修复、152/61/116 回归 |
+| [G3c-2 真实消息与 AI 回复联调](development/G3C2_REAL_REPLY.md) | 单次 arm→新消息→HTTP模型→原生发送确认；配置、幂等与未实测范围 |
 | [G3c-1 实现旧回执](acceptance/receipts/2026-10-01-g3c1-single-real-send.md) | 先前实现回归通过、测试会话未就绪时的历史记录 |
 | [G3c-1 首次真实发送与回执修复](acceptance/receipts/2026-10-01-g3c1-real-attempt-and-receipt-fix.md) | 实际发送一次、同 RUN 不重发；修复漏裁/时间分隔并通过 149/61/113 回归；保留当时 UNKNOWN/超时历史，当前收口见新回执 |
 | [G3b Safe Send Gate 旧回执](acceptance/receipts/2026-10-01-g3b-safe-send-gate.md) | 历史 Core/Host PASS 与旧 IME 条件下的 native BLOCKED；不是新版 Gate 回执 |
@@ -83,6 +84,6 @@ MC-WX 的 **G2 current-session 读取链**已有本机真实 PASS；G3a 已证�
 
 ## 6. 当前阶段和下一项
 
-**G3c-1 当前测试范围已收口**：新任务 853208 从 PREPARED 自动到 VERIFIED_OUTGOING；重放读取账本后返回，不再调用 native。Keychain 超时已定位并改为明确的无交互失败，历史 OCR 空格波动已与正文精确匹配分离；旧 UNKNOWN 保留且不重发。下一步 G3c-2 接真实 incoming / ReplyProvider，先一条任务的完整自动回复，并扩展正常文本支持。持续值守、多会话另行推进；不新增 IME 或人工并发输入专项。
+**G3c-1 当前测试范围已收口**：新任务 853208 从 PREPARED 自动到 VERIFIED_OUTGOING；重放读取账本后返回，不再调用 native。Keychain 超时已定位并改为明确的无交互失败，历史 OCR 空格波动已与正文精确匹配分离；旧 UNKNOWN 保留且不重发。G3c-2 已接通新 incoming / HTTP ReplyProvider 的单次代码入口，目前仅找到示例配置；真实模型与聊天端到端验收待真实端点、模型及凭据就绪。短单行限制仍保留，不把未验收的长文/多行算作支持。持续值守、多会话另行推进；不新增 IME 或人工并发输入专项。
 
 目标应用版本与定制服务脱敏样例可在联调时补充，不阻塞模拟开发；未取得对应证据之前，不承诺真实客户端兼容性。根目录 scripts/check_docs.py 可直接检查本地 Markdown 文件目标、JSON 示例和案例引用，不联网检查外部链接。

@@ -102,9 +102,62 @@ async fn run() -> foxbot_host::Result<()> {
                   foxbot-host g2d-real-verify WORKER SESSION --allow-private-test-data\n\
                   foxbot-host g3c-inspect WORKER SESSION --allow-native-read\n\
                   foxbot-host g3c-send-once WORKER SESSION RUN KEYNAME --allow-single-test-send\n\
+                  foxbot-host g3c-reply-read-check WORKER SESSION --allow-native-read\n\
+                  foxbot-host g3c-reply-check CONFIG SESSION --allow-keychain-read\n\
+                  foxbot-host g3c-reply-arm CONFIG WORKER SESSION RUN --allow-native-read\n\
+                  foxbot-host g3c-reply-once CONFIG WORKER SESSION RUN --allow-network --allow-single-test-send\n\
                   Test only: foxbot-host lock-probe --hold"
         );
         return Ok(());
+    }
+    if matches!(
+        args[0].as_str(),
+        "g3c-reply-read-check" | "g3c-reply-check" | "g3c-reply-arm" | "g3c-reply-once"
+    ) {
+        #[cfg(not(target_os = "macos"))]
+        return Err(HostError::Unsupported);
+        #[cfg(target_os = "macos")]
+        {
+            use std::path::Path;
+            let result = if args[0] == "g3c-reply-read-check"
+                && args.len() == 4
+                && args[3] == "--allow-native-read"
+            {
+                g3c_reply::read_check(Path::new(&args[1]), &args[2])?
+            } else if args[0] == "g3c-reply-check"
+                && args.len() == 4
+                && args[3] == "--allow-keychain-read"
+            {
+                g3c_reply::check(Path::new(&args[1]), &args[2])?
+            } else if args[0] == "g3c-reply-arm"
+                && args.len() == 6
+                && args[5] == "--allow-native-read"
+            {
+                g3c_reply::arm(Path::new(&args[1]), Path::new(&args[2]), &args[3], &args[4])?
+            } else if args[0] == "g3c-reply-once"
+                && args.len() == 7
+                && args[5] == "--allow-network"
+                && args[6] == "--allow-single-test-send"
+            {
+                let token = foxbot_http::CancellationToken::new();
+                let future = g3c_reply::execute(
+                    Path::new(&args[1]),
+                    Path::new(&args[2]),
+                    &args[3],
+                    &args[4],
+                    token.clone(),
+                );
+                tokio::pin!(future);
+                tokio::select! {
+                    result = &mut future => result?,
+                    _ = tokio::signal::ctrl_c() => { token.cancel(); future.await? }
+                }
+            } else {
+                return Err(HostError::Config);
+            };
+            println!("{}", result);
+            return Ok(());
+        }
     }
     if args[0] == "credential-check" && args.len() == 3 && args[2] == "--allow-keychain-read" {
         let reference = CredentialRef {

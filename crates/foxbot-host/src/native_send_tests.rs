@@ -66,7 +66,7 @@ def observe():
 for line in sys.stdin:
     req = json.loads(line)
     cmd = req['command']
-    result = {'schema_version': 'foxbot.native-send-worker.v3', 'id': req['id'], 'status': 'OBSERVED',
+    result = {'schema_version': 'foxbot.native-send-worker.v4', 'id': req['id'], 'status': 'OBSERVED',
               'write_attempted': False, 'send_attempted': False, 'verified_outgoing': False}
     if MODE == 'bad-id':
         result['id'] += 1

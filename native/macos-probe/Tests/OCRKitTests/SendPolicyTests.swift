@@ -87,6 +87,21 @@ final class SendPolicyTests: XCTestCase {
             characterCount: lines.reduce(0) { $0 + $1.text.count }, lowConfidenceLines: 0,
             partialReasons: complete ? [] : ["OCR_PARTIAL"], completeRecognition: complete))
     }
+    func testPrivateReadUsesExactlyTheReceiptMessageProjection() {
+        let lines = [
+            OCRLine(text: "新问题", confidence: 0.99, bounds: CGRect(x: 0.33, y: 0.5, width: 0.13, height: 0.014)),
+            OCRLine(text: "今天 18:23", confidence: 0.99, bounds: CGRect(x: 0.598, y: 0.40, width: 0.07, height: 0.013)),
+            OCRLine(text: "draft excluded", confidence: 0.99, bounds: CGRect(x: 0.80, y: 0.82, width: 0.15, height: 0.012))
+        ]
+        let raw = WeChatSendPolicy.readMessages(ocr(lines))
+        let signatures = WeChatSendPolicy.receiptSignatures(ocr(lines))
+        XCTAssertEqual(raw.count, 1)
+        XCTAssertEqual(raw[0].text, "新问题")
+        XCTAssertEqual(raw[0].direction, "THEM")
+        XCTAssertEqual(WeChatSendPolicy.digest(raw[0].text), signatures[0].digest)
+        XCTAssertEqual(raw[0].complete, signatures[0].complete)
+    }
+
     func testBottomBubbleAboveComposerBoundaryIsIncluded() {
         let bottom = OCRLine(text: "synthetic reply", confidence: 0.99,
             bounds: CGRect(x: 0.80, y: 0.767, width: 0.15, height: 0.012))

@@ -10,7 +10,7 @@ use std::{
     time::Duration,
 };
 #[path = "../../foxbot-http/tests/support/mod.rs"]
-mod support;
+pub(crate) mod support;
 use support::{Server, private_dir};
 
 fn configuration(server: &Server, count: usize) -> HostConfig {

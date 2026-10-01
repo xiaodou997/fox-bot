@@ -36,7 +36,7 @@ fn component(value: &str) -> bool {
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'))
 }
-fn binding(session: &str) -> Result<NativeConversationBinding> {
+pub(crate) fn binding(session: &str) -> Result<NativeConversationBinding> {
     if !component(session) {
         return Err(HostError::Config);
     }

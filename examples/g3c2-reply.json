@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "http": {
+    "protocol": "chat_completions",
+    "endpoint": "https://YOUR-PROVIDER.invalid/v1/chat/completions",
+    "model": "YOUR_MODEL",
+    "context_mode": "client_managed",
+    "receipt_endpoint": null,
+    "idempotency_supported": false,
+    "staging_contract": false,
+    "allow_loopback_http": false,
+    "attempt_timeout_ms": 60000,
+    "total_timeout_ms": 60000,
+    "max_attempts": 1,
+    "max_response_bytes": 131072,
+    "max_in_flight": 1
+  },
+  "token": {"id": "foxbot-g3c2-api"},
+  "ledger_key": {"id": "foxbot-g3c2-ledger"},
+  "provider": {
+    "kind": "generic",
+    "system_prompt": "这是自动回复联调。请根据最后一条用户消息，以一句简短中文回答，不换行，不超过50个字。"
+  },
+  "wait_ms": 60000,
+  "poll_ms": 1000
+}

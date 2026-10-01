@@ -455,7 +455,7 @@ fn is_han(value: char) -> bool {
     matches!(value as u32, 0x3400..=0x4DBF | 0x4E00..=0x9FFF | 0xF900..=0xFAFF)
 }
 
-fn continuity_text(value: &str) -> String {
+pub(crate) fn continuity_text(value: &str) -> String {
     let line_normalized = value.replace("\r\n", "\n").replace('\r', "\n");
     let mut collapsed = String::with_capacity(line_normalized.len());
     let mut horizontal_space = false;

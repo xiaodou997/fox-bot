@@ -5,6 +5,7 @@ pub mod config;
 pub mod credentials;
 pub mod g2d_real;
 pub mod g3c_real;
+pub mod g3c_reply;
 pub mod native_bridge;
 pub mod native_read;
 pub mod native_send;

@@ -46,6 +46,13 @@ public struct SendObservation: Codable, Equatable {
     }
 }
 
+/// Plaintext is available only to the host's explicitly requested private read command.
+public struct NativeReadMessage: Encodable {
+    public let text: String
+    public let direction: String
+    public let complete: Bool
+}
+
 public enum WeChatSendPolicy {
     public static let evidenceRevision = "WECHAT_RECEIPT_V3"
     public static let controlRegion = CGRect(x: 0.86, y: 0.80, width: 0.14, height: 0.20)
@@ -97,7 +104,7 @@ public enum WeChatSendPolicy {
         ) != nil
     }
 
-    public static func receiptSignatures(_ snapshot: OCRSnapshot) -> [SendMessageSignature] {
+    private static func parsedMessages(_ snapshot: OCRSnapshot) -> [ParsedChatMessage] {
         // The old 0.765 cutoff discarded the bottom chat bubble. Share the composer boundary
         // instead; reject boxes crossing it so draft text can never become receipt evidence.
         let chatOnly = OCRSnapshot(
@@ -106,7 +113,18 @@ public enum WeChatSendPolicy {
             },
             statistics: snapshot.statistics
         )
-        return WeChatMessageParser.parse(chatOnly, maxMessages: 64).messages.map {
+        return WeChatMessageParser.parse(chatOnly, maxMessages: 64).messages
+    }
+
+    public static func readMessages(_ snapshot: OCRSnapshot) -> [NativeReadMessage] {
+        parsedMessages(snapshot).map {
+            NativeReadMessage(text: $0.text, direction: $0.direction.rawValue,
+                complete: snapshot.statistics.completeRecognition && $0.direction != .unknown)
+        }
+    }
+
+    public static func receiptSignatures(_ snapshot: OCRSnapshot) -> [SendMessageSignature] {
+        parsedMessages(snapshot).map {
             SendMessageSignature(digest: digest($0.text), direction: $0.direction.rawValue,
                                  complete: snapshot.statistics.completeRecognition && $0.direction != .unknown,
                                  continuityDigest: digest(continuityText($0.text)))
