@@ -44,6 +44,8 @@ Swift 的 `NativeSendGateFacts` 只保留 capture、frontmost、两次 surface �
 
 ## 5. 回归范围
 
+固定代码提交 `aafbb76` 已完成 13/13 集成检查，Rust 137 / Python 61 / Swift 97 全部通过；完整证据与未执行范围见[本次回执](../acceptance/receipts/2026-10-01-g3b-unattended-execution.md)。
+
 保留并验证无人值守正常路径、无副作用 preview、每项目标/权限/内容校验、写入未生效/截断、surface 变化、revision 过期、显式暂停恢复、DeviceOwner 和 UNKNOWN 不重发。
 
 Swift `testUnattendedReadyNeedsNoInputStateEvidence` 验证 READY 不再需要 IME 事实；`testEveryExecutionFactStillBlocksIndependently` 验证保留的七项条件分别有效。Rust `developer_pause_invalidates_old_action_and_resume_only_allows_fresh_work` 验证开发交接不重发旧任务。

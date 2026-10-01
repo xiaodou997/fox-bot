@@ -45,6 +45,7 @@ macOS 微信 G2 真实读取链已完成 Freeze；G3a 已证明测试级草稿�
 | [G3a Draft Writer 回执](acceptance/receipts/2026-10-01-g3a-draft-writer.md) | 已有草稿拒绝覆盖、空草稿真实写入回读和 send_attempted=false 的真机证据 |
 | [G3b Safe Send Gate](development/G3B_SAFE_SEND_GATE.md) | 无人值守双门禁、GUI ownership、revision/outbox 与 native no-send facts |
 | [G3b 无人值守独占执行](development/G3B_UNATTENDED_EXECUTION.md) | 用户运行前提、移除 IME/人工活动门禁、开发暂停交接和 G3c 路线 |
+| [G3b 无人值守调整回执](acceptance/receipts/2026-10-01-g3b-unattended-execution.md) | 固定代码提交，13/13 集成检查、Rust 137 / Python 61 / Swift 97；未执行真实发送 |
 | [G3b Safe Send Gate 旧回执](acceptance/receipts/2026-10-01-g3b-safe-send-gate.md) | 历史 Core/Host PASS 与旧 IME 条件下的 native BLOCKED；不是新版 Gate 回执 |
 | [G3b IME Evidence Spike（归档）](development/G3B_IME_EVIDENCE_SPIKE.md) | 独立诊断实验及证据边界，已退出正常执行路径，不再阻塞 G3c |
 | [G3b IME Spike 旧回执](acceptance/receipts/2026-10-01-g3b-ime-evidence-spike.md) | 当时的真实采样和实验；保留原结果，开发阻断结论已被独占契约取代 |
