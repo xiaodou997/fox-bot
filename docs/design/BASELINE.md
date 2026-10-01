@@ -3,7 +3,7 @@
 - 文档编号：FB-BASELINE-001
 - 日期：2026-10-01
 - 性质：实现前设计基线，不是产品 v0.1 发布或功能冻结声明。
-- 当前实现：G1a～G1c、G2a～G2d 已完成；macOS 微信 current-session 真实读取链已 Freeze，G3a 已实现测试级回填。G3b 的 `BEFORE_FILL` / `BEFORE_SEND` 双门禁已按[无人值守独占契约](../development/G3B_UNATTENDED_EXECUTION.md)调整，不再要求 IME/人工活动证据。[G3c-1](../development/G3C1_SINGLE_REAL_SEND.md) 已实现固定短文本的单次原生发送、加密发件箱和新己方消息核对；真实验收另附记录，不等于完整 AUTO_REPLY 或多会话支持。
+- 当前实现：G1a～G1c、G2a～G2d 已完成；macOS 微信 current-session 真实读取链已 Freeze，G3a 已实现测试级回填。G3b 的 `BEFORE_FILL` / `BEFORE_SEND` 双门禁已按[无人值守独占契约](../development/G3B_UNATTENDED_EXECUTION.md)调整，不再要求 IME/人工活动证据。[G3c-1](../development/G3C1_SINGLE_REAL_SEND.md) 已在当前测试私聊完成固定短文本的单次原生发送、自动确认与重放零发送，见[收口回执](../acceptance/receipts/2026-10-01-g3c1-closeout.md)。下一步接真实 incoming / ReplyProvider，不等于完整 AUTO_REPLY 或多会话支持。
 - 关联：[文档导航](../README.md) · [适配矩阵](../adapters/CAPABILITY_MATRIX.md) · [验收清单](../acceptance/ACCEPTANCE_CHECKLIST.md) · [来源审计](../references/UPSTREAM_AUDIT.md)
 
 ## 1. 已确定的目标与约束

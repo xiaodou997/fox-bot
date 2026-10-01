@@ -2,7 +2,7 @@
 
 面向微信、QQ、飞书和 X 私信的跨平台消息自动化客户端。
 
-**当前状态：G3c-1 首次真实单条发送已执行并观察到消息；回执采集缺陷已修复，自动闭环仍待收口。** 新增固定测试回复的加密发件箱、原生回填、单次发送与新己方消息核对；尚未接入真实模型或持续 AUTO_REPLY。桌面界面和 APK 未实现。入口与边界见[G3c-1 说明](docs/development/G3C1_SINGLE_REAL_SEND.md)，本轮状态见[真实发送与回执修复记录](docs/acceptance/receipts/2026-10-01-g3c1-real-attempt-and-receipt-fix.md)，历史证据见[文档导航](docs/README.md)。
+**当前状态：G3c-1 当前私聊单条真实发送已在测试范围收口：自动确认完成，同一任务重放不再发送。** 新增固定测试回复的加密发件箱、原生回填、单次发送与新己方消息核对；尚未接入真实模型或持续 AUTO_REPLY。桌面界面和 APK 未实现。入口与边界见[G3c-1 说明](docs/development/G3C1_SINGLE_REAL_SEND.md)，本轮状态见[单条发送收口回执](docs/acceptance/receipts/2026-10-01-g3c1-closeout.md)，历史证据见[文档导航](docs/README.md)。
 
 ## 产品边界
 

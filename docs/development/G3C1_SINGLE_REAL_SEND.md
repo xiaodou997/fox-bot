@@ -2,7 +2,7 @@
 
 - 日期：2026-10-01
 - 前置：[G2 Freeze](../acceptance/receipts/2026-09-30-g2-freeze.md) · [无人值守执行契约](G3B_UNATTENDED_EXECUTION.md)
-- 状态：REAL SINGLE ATTEMPT / PARTIAL；已发送一次并只读识别到消息，旧自动回执仍 UNKNOWN；回执采集修复通过回归，完整修复版验收及宿主只读重放超时待收口，见[最新回执](../acceptance/receipts/2026-10-01-g3c1-real-attempt-and-receipt-fix.md)。
+- 状态：ACCEPTED IN TEST SCOPE；新任务自动 VERIFIED_OUTGOING、相同任务重放零原生调用；Keychain 超时和历史空格误拦截已处理，见[收口回执](../acceptance/receipts/2026-10-01-g3c1-closeout.md)。
 - 范围：macOS 微信、已绑定的当前测试私聊、固定短文本、单条发送与只读结果核对。不是完整 AUTO_REPLY，也不是多会话值守。
 
 ## 1. 闭环
@@ -33,7 +33,9 @@ Rust `NativeSendChannel` 实现现有 `MessageChannel`，复用 Runtime 的双�
 
 ## 3. 回执不是布尔值
 
-当前采集 revision 为 `WECHAT_RECEIPT_V2`，IPC 为 `foxbot.native-send-worker.v2`。采集保留 composer 上边界之前的完整消息，排除居中时间分隔；不删除左右气泡内的日期文字。旧回执仅存哈希，缺少用于重新解析的原文/坐标，不能自动补 revision 与新证据混用；保留 UNKNOWN，而不是迁移为成功。
+历史消息比较使用独立 continuity_digest（与 G2 一致的水平空白及汉字/ASCII 边界空格规则），草稿和新增回复仍使用精确正文。数字、大小写、词义或顺序变化不能按空格漂移忽略。native 错误分别报告上下文变化与正文不符。
+
+当前采集 revision 为 `WECHAT_RECEIPT_V3`，IPC 为 `foxbot.native-send-worker.v3`。采集保留 composer 上边界之前的完整消息，排除居中时间分隔；不删除左右气泡内的日期文字。旧回执仅存哈希，缺少用于重新解析的原文/坐标，不能自动补 revision 与新证据混用；保留 UNKNOWN，而不是迁移为成功。
 
 旧 G2 聊天 ROI 与输入区部分重叠；发送回执观察额外排除输入区和工具条，防止把刚回填的正文当成已发消息。历史文字只转为 digest、方向、完整性签名，用于本地核对，不写入公开输出。
 
@@ -64,6 +66,8 @@ target/debug/foxbot-host g3c-inspect \
   target/macos-probe/debug/foxbot-macos-send g2d-test --allow-native-read
 ```
 
+先用 `foxbot-host credential-check NAME --allow-keychain-read` 检查凭据。后台读取不会弹授权 UI；ACCESS_DENIED / AUTHORIZATION_REQUIRED 必须在前台处理原权限，不能将它们当成 MISSING 后覆盖旧 key。开发构建变化时应重新检查可用性；固定构建下验收，不在建 key 与复查之间改程序。
+
 为该测试账本显式创建一个命名 Keychain key，已有 key 不替换。这里的名称只是凭据引用，不是密钥：
 
 ```bash
@@ -79,6 +83,8 @@ target/debug/foxbot-host g3c-send-once \
 ```
 
 开发期间先暂停/停止已有 GUI 执行者，再交还微信前台；不要求 IME、候选窗或近期键鼠活动证明。正常目标/内容/权限检查仍然有效。
+
+最终通过任务为 `853208`，凭据引用为 `g3c1-v3-closeout-20261001`；同一任务重放已真实验证，inspect/fill/send/reconcile 全部为 0。旧 742961 与中途未发送的 853207 保留原结果，不能反填为成功。下一步接真实新消息及 ReplyProvider；完整 AUTO_REPLY 尚未接通。
 
 ## 6. 回归与下一项
 
