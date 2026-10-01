@@ -13,7 +13,7 @@ private struct Request: Decodable {
 }
 
 private struct Reply: Encodable {
-    let schemaVersion = "foxbot.native-send-worker.v2"
+    let schemaVersion = "foxbot.native-send-worker.v3"
     let id: UInt64
     var status: String
     var observation: SendObservation?
@@ -149,7 +149,7 @@ struct SendMain {
                     } else if request.command == "fill" {
                         guard allowWrite else { throw Failure.invalidRequest }
                         guard !fillUsed else { throw Failure.actionAlreadyAttempted }
-                        guard expected.messages == current.messages else { throw Failure.targetChanged }
+                        guard expected.sameMessages(as: current) else { throw Failure.targetChanged }
                         guard current.draftState == .emptyHeuristic else { throw Failure.draftNotEmpty }
                         fillUsed = true
                         try checkOwner()
@@ -162,15 +162,16 @@ struct SendMain {
                         try await Task.sleep(nanoseconds: 600_000_000)
                         let (_, after) = try await capture()
                         reply.observation = after
-                        guard expected.sameSurface(as: after), expected.messages == after.messages,
-                              after.draftText == text else { throw Failure.draftMismatch }
+                        guard expected.sameSurface(as: after), expected.sameMessages(as: after)
+                        else { throw Failure.targetChanged }
+                        guard after.draftText == text else { throw Failure.draftMismatch }
                         filledAction = action
                         filledText = text
                         reply.status = "FILLED"
                     } else {
                         guard allowWrite, filledAction == action, filledText == text else { throw Failure.invalidRequest }
                         guard !sendUsed else { throw Failure.actionAlreadyAttempted }
-                        guard expected.messages == current.messages else { throw Failure.targetChanged }
+                        guard expected.sameMessages(as: current) else { throw Failure.targetChanged }
                         guard current.draftText == text else { throw Failure.draftMismatch }
                         guard let button = current.sendButton else { throw Failure.sendButtonUnavailable }
                         try checkOwner()

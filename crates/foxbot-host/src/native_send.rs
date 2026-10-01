@@ -20,7 +20,7 @@ use std::{
     time::Duration,
 };
 
-const RECEIPT_REVISION: &str = "WECHAT_RECEIPT_V2";
+const RECEIPT_REVISION: &str = "WECHAT_RECEIPT_V3";
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -34,6 +34,16 @@ pub struct MessageSignature {
     pub digest: String,
     pub direction: String,
     pub complete: bool,
+    #[serde(default)]
+    pub continuity_digest: Option<String>,
+}
+impl MessageSignature {
+    fn same_context(&self, other: &Self) -> bool {
+        self.continuity_digest.is_some()
+            && self.continuity_digest == other.continuity_digest
+            && self.direction == other.direction
+            && self.complete == other.complete
+    }
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -53,6 +63,14 @@ pub struct NativeSendObservation {
     pub evidence_revision: Option<String>,
 }
 impl NativeSendObservation {
+    fn same_messages(&self, other: &Self) -> bool {
+        self.messages.len() == other.messages.len()
+            && self
+                .messages
+                .iter()
+                .zip(&other.messages)
+                .all(|(a, b)| a.same_context(b))
+    }
     fn validate(&self) -> Result<()> {
         fn hash(value: &str) -> bool {
             value.len() == 64
@@ -69,7 +87,9 @@ impl NativeSendObservation {
             || self.window_ref.len() > 128
             || self.messages.len() > 64
             || self.messages.iter().any(|m| {
-                !hash(&m.digest) || !matches!(m.direction.as_str(), "ME" | "THEM" | "UNKNOWN")
+                !hash(&m.digest)
+                    || !m.continuity_digest.as_deref().is_some_and(hash)
+                    || !matches!(m.direction.as_str(), "ME" | "THEM" | "UNKNOWN")
             })
             || !matches!(
                 self.draft_state.as_str(),
@@ -217,7 +237,7 @@ impl Worker {
             .map_err(|_| HostError::NativeWorker)?;
         let reply: WorkerReply =
             serde_json::from_slice(&data).map_err(|_| HostError::NativeWorker)?;
-        if reply.schema_version != "foxbot.native-send-worker.v2"
+        if reply.schema_version != "foxbot.native-send-worker.v3"
             || reply.id != id
             || (command != "fill" && reply.write_attempted)
             || (command != "send" && reply.send_attempted)
@@ -331,7 +351,7 @@ impl<'a> NativeSendChannel<'a> {
             conversation_changed: self
                 .baseline
                 .as_ref()
-                .is_some_and(|b| b.messages != observation.messages),
+                .is_some_and(|b| !b.same_messages(observation)),
             permitted: observation.matches_binding(&self.binding),
             frontmost: observation.frontmost,
         }
@@ -375,7 +395,12 @@ fn matching_outgoing(
     let lower = 2.min(before.messages.len());
     let upper = before.messages.len().min(after.messages.len());
     let overlaps: Vec<_> = (lower..=upper)
-        .filter(|&n| before.messages[before.messages.len() - n..] == after.messages[..n])
+        .filter(|&n| {
+            before.messages[before.messages.len() - n..]
+                .iter()
+                .zip(&after.messages[..n])
+                .all(|(a, b)| a.same_context(b))
+        })
         .collect();
     overlaps.len() == 1
         && after.messages[overlaps[0]..]

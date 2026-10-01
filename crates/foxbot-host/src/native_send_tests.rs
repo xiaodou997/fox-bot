@@ -55,18 +55,18 @@ marker = root / 'sent.json'
 allow = '--allow-single-send' in sys.argv
 draft = ''
 def sig(text, direction):
-    return {'digest': hashlib.sha256(text.encode()).hexdigest(), 'direction': direction, 'complete': True}
+    return {'digest': hashlib.sha256(text.encode()).hexdigest(), 'continuity_digest': hashlib.sha256(text.encode()).hexdigest(), 'direction': direction, 'complete': True}
 def observe():
     messages = [sig('anchor-a', 'THEM'), sig('anchor-b', 'ME')]
     if marker.exists():
         messages.append(sig(json.loads(marker.read_text())['text'], 'ME'))
     return {'application_session': 'c'*64, 'conversation': 'a'*64, 'window_ref': '1', 'layout_ref': 'd'*64,
             'frontmost': True, 'conversation_resolved': True, 'draft_state': 'NONEMPTY' if draft else 'EMPTY_HEURISTIC',
-            'draft_text': draft, 'messages': messages, 'send_button': {'x': .94, 'y': .94}, 'evidence_revision': 'WECHAT_RECEIPT_V2'}
+            'draft_text': draft, 'messages': messages, 'send_button': {'x': .94, 'y': .94}, 'evidence_revision': 'WECHAT_RECEIPT_V3'}
 for line in sys.stdin:
     req = json.loads(line)
     cmd = req['command']
-    result = {'schema_version': 'foxbot.native-send-worker.v2', 'id': req['id'], 'status': 'OBSERVED',
+    result = {'schema_version': 'foxbot.native-send-worker.v3', 'id': req['id'], 'status': 'OBSERVED',
               'write_attempted': False, 'send_attempted': False, 'verified_outgoing': False}
     if MODE == 'bad-id':
         result['id'] += 1
@@ -295,6 +295,34 @@ fn unknown_observation_revision_is_rejected() {
     assert!(observation.validate().is_err());
     observation.evidence_revision = None;
     assert!(observation.validate().is_err());
+}
+
+#[test]
+fn context_signature_can_ignore_spacing_without_relaxing_exact_outgoing_digest() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut child =
+        Worker::start(&worker(dir.path(), "ok"), false, Duration::from_secs(20)).unwrap();
+    let before = child
+        .request("inspect", None, None)
+        .unwrap()
+        .observation
+        .unwrap();
+    let mut after = before.clone();
+    after.messages[0].digest = "e".repeat(64);
+    assert!(before.same_messages(&after));
+    let text = "回复 42";
+    let digest = format!("{:x}", Sha256::digest(text.as_bytes()));
+    after.messages.push(MessageSignature {
+        digest: digest.clone(),
+        direction: "ME".into(),
+        complete: true,
+        continuity_digest: Some(digest),
+    });
+    assert!(!before.same_messages(&after));
+    assert!(matching_outgoing(&before, &after, text));
+    assert!(!matching_outgoing(&before, &after, "回复42"));
+    after.messages[0].continuity_digest = Some("f".repeat(64));
+    assert!(!matching_outgoing(&before, &after, text));
 }
 
 #[test]

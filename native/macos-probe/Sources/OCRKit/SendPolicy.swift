@@ -11,6 +11,12 @@ public struct SendMessageSignature: Codable, Equatable {
     public let digest: String
     public let direction: String
     public let complete: Bool
+    public let continuityDigest: String?
+
+    public func sameContext(as other: SendMessageSignature) -> Bool {
+        continuityDigest != nil && continuityDigest == other.continuityDigest
+            && direction == other.direction && complete == other.complete
+    }
 }
 
 /// Private worker IPC. Only the draft text is plaintext; chat history is hashed.
@@ -28,6 +34,11 @@ public struct SendObservation: Codable, Equatable {
     /// Missing in legacy receipts. Never infer or retrofit their evidence revision.
     public var evidenceRevision: String?
 
+    public func sameMessages(as other: SendObservation) -> Bool {
+        messages.count == other.messages.count
+            && zip(messages, other.messages).allSatisfy { $0.sameContext(as: $1) }
+    }
+
     public func sameSurface(as other: SendObservation) -> Bool {
         applicationSession == other.applicationSession && conversation == other.conversation
             && windowRef == other.windowRef && layoutRef == other.layoutRef
@@ -36,12 +47,24 @@ public struct SendObservation: Codable, Equatable {
 }
 
 public enum WeChatSendPolicy {
-    public static let evidenceRevision = "WECHAT_RECEIPT_V2"
+    public static let evidenceRevision = "WECHAT_RECEIPT_V3"
     public static let controlRegion = CGRect(x: 0.86, y: 0.80, width: 0.14, height: 0.20)
 
     public static func digest(_ value: String) -> String {
         SHA256.hash(data: Data(value.utf8))
             .map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// Match G2's historical-context normalization only. Exact outgoing/draft comparison
+    /// still uses the unmodified text digest; never repair digits, case, punctuation or words.
+    public static func continuityText(_ text: String) -> String {
+        let collapsed = text.replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: #"[ \t]+"#, with: " ", options: .regularExpression)
+        return collapsed.replacingOccurrences(
+            of: #"(?<=[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]) (?=[A-Za-z0-9])|(?<=[A-Za-z0-9]) (?=[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF])"#,
+            with: "", options: .regularExpression)
     }
 
     /// G3c-1 deliberately supports short, single-line plain text only. Reject before input.
@@ -85,7 +108,8 @@ public enum WeChatSendPolicy {
         )
         return WeChatMessageParser.parse(chatOnly, maxMessages: 64).messages.map {
             SendMessageSignature(digest: digest($0.text), direction: $0.direction.rawValue,
-                                 complete: snapshot.statistics.completeRecognition && $0.direction != .unknown)
+                                 complete: snapshot.statistics.completeRecognition && $0.direction != .unknown,
+                                 continuityDigest: digest(continuityText($0.text)))
         }
     }
 
@@ -124,7 +148,8 @@ public enum WeChatSendPolicy {
         let lower = min(2, before.messages.count)
         guard upper >= lower else { return false }
         let overlaps = (lower...upper).filter { count in
-            Array(before.messages.suffix(count)) == Array(after.messages.prefix(count))
+            zip(before.messages.suffix(count), after.messages.prefix(count))
+                .allSatisfy { $0.sameContext(as: $1) }
         }
         guard overlaps.count == 1, let overlap = overlaps.first else { return false }
         let added = after.messages.dropFirst(overlap)

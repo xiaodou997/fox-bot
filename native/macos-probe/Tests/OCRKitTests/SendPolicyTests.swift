@@ -4,7 +4,8 @@ import XCTest
 
 final class SendPolicyTests: XCTestCase {
     private func message(_ text: String, me: Bool = false, complete: Bool = true) -> SendMessageSignature {
-        SendMessageSignature(digest: WeChatSendPolicy.digest(text), direction: me ? "ME" : "THEM", complete: complete)
+        SendMessageSignature(digest: WeChatSendPolicy.digest(text), direction: me ? "ME" : "THEM", complete: complete,
+                             continuityDigest: WeChatSendPolicy.digest(WeChatSendPolicy.continuityText(text)))
     }
     private func snapshot(_ messages: [SendMessageSignature], draft: DraftReadState = .emptyHeuristic,
                           conversation: String = "chat") -> SendObservation {
@@ -12,6 +13,28 @@ final class SendPolicyTests: XCTestCase {
                         frontmost: true, conversationResolved: true, draftState: draft, draftText: "",
                         messages: messages, sendButton: nil, evidenceRevision: WeChatSendPolicy.evidenceRevision)
     }
+    func testHistoricalSpacingDoesNotChangeContextButOutgoingTextStaysExact() {
+        let before = snapshot([message("版本 V2 正常"), message("anchor", me: true)])
+        let normalized = snapshot([message("版本V2正常"), message("anchor", me: true)])
+        XCTAssertTrue(before.sameMessages(as: normalized))
+        let exact = snapshot(normalized.messages + [message("回复 42", me: true)])
+        XCTAssertTrue(WeChatSendPolicy.verifiedOutgoing(before: before, after: exact, text: "回复 42"))
+        XCTAssertFalse(WeChatSendPolicy.verifiedOutgoing(before: before, after: exact, text: "回复42"))
+    }
+
+    func testContinuityNormalizationPreservesDigitsWordsCaseAndNewlines() {
+        XCTAssertEqual(WeChatSendPolicy.continuityText(" 版本\tV2 正常\r\n next  word "), "版本V2正常\n next word")
+        for (a, b) in [("订单 123", "订单 124"), ("hello world", "helloworld"), ("V2正常", "v2正常"), ("a\nb", "ab")] {
+            XCTAssertNotEqual(WeChatSendPolicy.continuityText(a), WeChatSendPolicy.continuityText(b))
+        }
+    }
+
+    func testNewMessageAndReorderedContextAreNotJustSpacingDrift() {
+        let before = snapshot([message("a"), message("b")])
+        XCTAssertFalse(before.sameMessages(as: snapshot(before.messages + [message("c")])))
+        XCTAssertFalse(before.sameMessages(as: snapshot(Array(before.messages.reversed()))))
+    }
+
     func testNewMatchingOutgoingIsObservedNotDelivered() {
         let before = snapshot([message("a"), message("b")])
         let after = snapshot(before.messages + [message("reply", me: true)])
