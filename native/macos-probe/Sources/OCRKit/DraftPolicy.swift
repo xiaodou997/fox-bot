@@ -48,8 +48,8 @@ public enum WeChatDraftPolicy {
         return value.replacingOccurrences(of: #"[ \t]+"#, with: " ", options: .regularExpression)
     }
 
-    public static func verified(_ expected: String, snapshot: OCRSnapshot) -> Bool {
-        guard snapshot.statistics.completeRecognition else { return false }
+    public static func observedText(_ snapshot: OCRSnapshot) -> String? {
+        guard snapshot.statistics.completeRecognition else { return nil }
         let joined = snapshot.lines
             .filter {
                 $0.confidence >= 0.30
@@ -64,6 +64,11 @@ public enum WeChatDraftPolicy {
             }
             .map(\.text)
             .joined(separator: "\n")
-        return normalizeVerificationText(joined) == normalizeVerificationText(expected)
+        return normalizeVerificationText(joined)
+    }
+
+    public static func verified(_ expected: String, snapshot: OCRSnapshot) -> Bool {
+        guard let observed = observedText(snapshot) else { return false }
+        return observed == normalizeVerificationText(expected)
     }
 }

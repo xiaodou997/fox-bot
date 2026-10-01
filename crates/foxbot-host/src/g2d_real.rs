@@ -136,7 +136,7 @@ fn private_directory(path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn write_private_json<T: Serialize>(path: &Path, value: &T) -> Result<()> {
+pub(crate) fn write_private_json<T: Serialize>(path: &Path, value: &T) -> Result<()> {
     if let Ok(metadata) = fs::symlink_metadata(path)
         && (!metadata.is_file() || metadata.file_type().is_symlink())
     {
@@ -171,7 +171,7 @@ fn write_private_json<T: Serialize>(path: &Path, value: &T) -> Result<()> {
     Ok(())
 }
 
-fn read_private_json<T: DeserializeOwned>(path: &Path) -> Result<T> {
+pub(crate) fn read_private_json<T: DeserializeOwned>(path: &Path) -> Result<T> {
     let metadata = fs::symlink_metadata(path).map_err(|_| HostError::Config)?;
     if !metadata.is_file()
         || metadata.file_type().is_symlink()

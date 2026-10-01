@@ -1,11 +1,13 @@
 //! G1c: continuous host with bounded tasks, independent control, credentials and device ownership.
-//! Current executables use synthetic observations and senders only; not native chat support.
+//! Continuous mode remains synthetic; G3c-1 exposes a separate opt-in native single-send test.
 #![forbid(unsafe_code)]
 pub mod config;
 pub mod credentials;
 pub mod g2d_real;
+pub mod g3c_real;
 pub mod native_bridge;
 pub mod native_read;
+pub mod native_send;
 pub mod ownership;
 pub mod scheduler;
 pub use config::*;

@@ -1,4 +1,4 @@
-//! Development host: stdin commands and synthetic senders; never operates a real chat app.
+//! Development host. Continuous mode is synthetic; G3c-1 single-send is separately opt-in.
 use foxbot_core::{simulation::*, *};
 use foxbot_host::{
     credentials::{CredentialRef, CredentialStore, NativeCredentials, Secret},
@@ -99,9 +99,33 @@ async fn run() -> foxbot_host::Result<()> {
                   foxbot-host g2d-private-capture WORKER SESSION CASE TAGS --allow-private-test-data\n\
                   foxbot-host g2d-real-baseline WORKER SESSION ACCOUNT CONVERSATION KIND --allow-private-test-data\n\
                   foxbot-host g2d-real-verify WORKER SESSION --allow-private-test-data\n\
+                  foxbot-host g3c-inspect WORKER SESSION --allow-native-read\n\
+                  foxbot-host g3c-send-once WORKER SESSION RUN KEYNAME --allow-single-test-send\n\
                   Test only: foxbot-host lock-probe --hold"
         );
         return Ok(());
+    }
+    if matches!(args[0].as_str(), "g3c-inspect" | "g3c-send-once") {
+        #[cfg(not(target_os = "macos"))]
+        return Err(HostError::Unsupported);
+        #[cfg(target_os = "macos")]
+        {
+            let report = if args[0] == "g3c-inspect"
+                && args.len() == 4
+                && args[3] == "--allow-native-read"
+            {
+                g3c_real::inspect(std::path::Path::new(&args[1]), &args[2])?
+            } else if args[0] == "g3c-send-once"
+                && args.len() == 6
+                && args[5] == "--allow-single-test-send"
+            {
+                g3c_real::send_once(std::path::Path::new(&args[1]), &args[2], &args[3], &args[4])?
+            } else {
+                return Err(HostError::Config);
+            };
+            println!("{}", report);
+            return Ok(());
+        }
     }
     if args[0] == "lock-probe" && args.len() == 2 && args[1] == "--hold" {
         let _owner = DeviceOwner::acquire()?;

@@ -3,7 +3,7 @@
 - 编号：FB-MATRIX-001
 - 日期：2026-10-01
 - 适用设计：[FB-BASELINE-001](../design/BASELINE.md)
-- 状态：macOS 微信 current-session 的 G2 读取已真实 Freeze，G3a 已取得测试级真实回填/回读；G3b 已改为无人值守独占契约，IME/人工活动不再阻断开发。C07/C08 发送/验证尚未实现和验收，下一步 G3c-1；导航与恢复另行验收。
+- 状态：macOS 微信 current-session 的 G2 读取已真实 Freeze，G3a 已取得测试级真实回填/回读；G3b 已改为无人值守独占契约，IME/人工活动不再阻断开发。G3c-1 已实现固定短文本 C07/C08，真实验收单独记录；完整自动回复、导航与恢复另行验收。
 - 来源：[固定提交与审计记录](../references/UPSTREAM_AUDIT.md)
 
 ## 1. 状态语义
@@ -28,7 +28,7 @@
 | AD-QQ | Android / QQ | PRIMARY | 无障碍 resource-id / text；气泡布局用于方向解析 | ACTION_SET_TEXT / 粘贴回填，不发送 | PLANNED；NOT_RUN |
 | AD-X | Android / X 私信 | PRIMARY | Compose 节点 contentDescription 解析 | 通用输入框回填，不发送 | PLANNED；NOT_RUN |
 | AD-FS | Android / 飞书 | PRIMARY | 无障碍气泡矩形/状态＋本地 ML Kit OCR | 通用输入框回填，不发送 | PLANNED；NOT_RUN |
-| MC-WX | macOS / 微信 | PRIMARY | CaptureApp → 窗口截图与 Apple Vision 路径 | CGEvent Unicode 测试回填，不发送 | G2 READ FREEZE；G3a C06 REAL PASS；G3b UNATTENDED CONTRACT；IME ARCHIVED；C07～C10 NOT_RUN |
+| MC-WX | macOS / 微信 | PRIMARY | CaptureApp → 窗口截图与 Apple Vision 路径 | CGEvent Unicode 测试回填，不发送 | G2 READ FREEZE；G3a C06 REAL PASS；G3b UNATTENDED；G3c-1 C07/C08 IMPLEMENTED；C09/C10 NOT_RUN |
 | MC-QQ | macOS / QQ | PRIMARY | AXApp → AX 文本/类属性解析 | AX 设值及输入事件降级；不发送 | PLANNED；NOT_RUN |
 | WIN-WX | Windows / 微信 | PRIMARY | 上游 README 描述 WGC＋RapidOCR | app/fill.py 坐标定位＋剪贴板粘贴；不发送 | PLANNED；NOT_RUN |
 | AD-WX | Android / 微信 | PROBE_ONLY | 上游主动禁用微信入口；旧适配代码仍保留 | 不可据此宣称能够采集、回填或发送 | PLANNED；NOT_RUN；自动发送关闭 |
@@ -227,7 +227,7 @@ known_gaps:
 
 [G3a 说明](../development/G3A_DRAFT_WRITER.md)和[真实回执](../acceptance/receipts/2026-10-01-g3a-draft-writer.md)记录本轮真机证据。G3a PASS 只表示受限测试条件下可安全回填并回读，不提升 AUTO_REPLY。
 
-### G3b Safe Send Gate（发送动作仍不存在）
+### G3b Safe Send Gate（本阶段只做判定；发送见后续 G3c-1）
 
 | 对象 | 实现 | 本轮状态 | 未覆盖 / 限制 |
 | --- | --- | --- | --- |
@@ -236,9 +236,21 @@ known_gaps:
 | Gate-only smoke | PASS | 两阶段均 allowed；action 仍 PREPARED；fill_calls=0、send_calls=0、outgoing=0 | synthetic only |
 | Host GUI ownership | PASS | queued incoming / manual own output / stop / DeviceOwner inode replacement 均在 fill/send 前阻断 | 多设备全局排他仍不在一期内 |
 | MC-WX native facts | IMPLEMENTED / 新版真机 NOT_RUN | v2 按独占契约检查七项执行事实；不采集 IME/键鼠活动；旧版真机其它事实通过的记录保留 | 旧回执不自动转为新版 PASS；write/send ops 仍为 0 |
-| C07 send | NOT IMPLEMENTED | 无 Enter/Return、无发送按钮 click | 下一开发项 G3c-1，不再等待 IME |
+| C07 send | G3b 阶段不实现 | G3b 仅检查；G3c-1 另有原生发送 worker | 不再等待 IME；见下方 G3c-1 |
 
 当前规则见[G3b 说明](../development/G3B_SAFE_SEND_GATE.md)和[无人值守契约](../development/G3B_UNATTENDED_EXECUTION.md)。[旧回执](../acceptance/receipts/2026-10-01-g3b-safe-send-gate.md)保留历史结果；移除不适用条件不等于将旧真机 BLOCKED 改成 PASS。
+
+### G3c-1 单条当前私聊发送
+
+| 对象 | 实现 | 当前边界 |
+| --- | --- | --- |
+| NativeSendChannel | IMPLEMENTED | 复用 Runtime 双门禁、DeviceOwner 和加密 outbox；单次写入/发送，不接真实模型 |
+| C06 / C07 | IMPLEMENTED | 最多 80 UTF-16 单元单行文本；Unicode 回填、精确回读、当前截图唯一发送按钮点击 |
+| C08 verify | IMPLEMENTED | Rust/Swift 双重核对新己方消息与旧序列连续性；不是送达/已读确认 |
+| 同一 RUN 重放 | IMPLEMENTED | 已完成直接报告；UNKNOWN 只读核对，不再 fill/send |
+| G2 绑定衔接 | IMPLEMENTED | 重放 baseline→verified 已验收连续性，保留 durable key；不猜测新目标 |
+
+实现、命令、回归和真实验收边界见[G3c-1 说明](../development/G3C1_SINGLE_REAL_SEND.md)。此表的 IMPLEMENTED 不代表已取得真实发送 PASS。
 
 ### G3b IME Evidence Spike（归档；不再是执行门禁）
 

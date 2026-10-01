@@ -7,11 +7,14 @@ public struct WeChatComposerObservation {
     public let window: CaptureWindow
     public let privateSnapshot: PrivateMessageSnapshot
     public let draftSnapshot: OCRSnapshot
+    public let chatSnapshot: OCRSnapshot
+    public let controlSnapshot: OCRSnapshot?
 }
 
 public enum WeChatComposerProbe {
     public static func capture(
-        source: NativeWindowSource = NativeWindowSource()
+        source: NativeWindowSource = NativeWindowSource(),
+        includeSendControl: Bool = false
     ) async throws -> WeChatComposerObservation {
         let metadata = source.metadata(.wechat)
         guard metadata.runningInstances == 1,
@@ -64,7 +67,11 @@ public enum WeChatComposerProbe {
         return WeChatComposerObservation(
             window: window,
             privateSnapshot: privateSnapshot,
-            draftSnapshot: draft
+            draftSnapshot: draft,
+            chatSnapshot: chat,
+            controlSnapshot: includeSendControl
+                ? try VisionOCR.recognize(image, topLeftRegion: WeChatSendPolicy.controlRegion)
+                : nil
         )
     }
 }
