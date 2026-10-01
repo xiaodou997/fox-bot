@@ -46,48 +46,6 @@ private func wechatIsFrontmost() -> Bool {
     NSWorkspace.shared.frontmostApplication?.bundleIdentifier == TargetApp.wechat.bundleID
 }
 
-private func selectedWindow(_ source: NativeWindowSource) async throws -> (CaptureWindow, ImagePlan) {
-    let metadata = source.metadata(.wechat)
-    guard metadata.runningInstances == 1, let pid = metadata.pid,
-          metadata.permission, AXIsProcessTrusted(), wechatIsFrontmost()
-    else { throw DraftError.prerequisites }
-    let frame = try source.focusedFrame(.wechat, pid: pid)
-    let windows = try await source.windows(.wechat, pid: pid)
-        .filter { $0.eligible(for: .wechat, pid: pid, allowOffscreen: true) }
-        .filter {
-            abs($0.frame.minX - frame.minX) <= 0.5
-                && abs($0.frame.minY - frame.minY) <= 0.5
-                && abs($0.frame.width - frame.width) <= 0.5
-                && abs($0.frame.height - frame.height) <= 0.5
-        }
-    let active = windows.filter { $0.onScreen && $0.active }
-    let visible = windows.filter(\.onScreen)
-    let window: CaptureWindow?
-    if active.count == 1 { window = active[0] }
-    else if active.isEmpty && visible.count == 1 { window = visible[0] }
-    else { window = nil }
-    guard let window, window.hasValidGeometry else { throw DraftError.target }
-    return (window, try ImagePlan.make(size: window.contentSize, scale: window.scale))
-}
-
-private func capture(_ source: NativeWindowSource) async throws
-    -> (CaptureWindow, CGImage, PrivateMessageSnapshot, OCRSnapshot)
-{
-    let metadata = source.metadata(.wechat)
-    guard let launchTime = metadata.launchTime,
-          let appSession = WeChatMessageParser.applicationSessionFingerprint(
-            bundleID: TargetApp.wechat.bundleID, launchTime: launchTime)
-    else { throw DraftError.target }
-    let (window, plan) = try await selectedWindow(source)
-    let image = try await source.capture(window, plan: plan)
-    let chat = try VisionOCR.recognize(image, topLeftRegion: WeChatMessageParser.readRegion)
-    guard let privateSnapshot = WeChatMessageParser.privateSnapshot(
-        chat, applicationSessionFingerprint: appSession)
-    else { throw DraftError.target }
-    let draft = try VisionOCR.recognize(image, topLeftRegion: WeChatDraftPolicy.draftRegion)
-    return (window, image, privateSnapshot, draft)
-}
-
 private func clickComposer(window: CaptureWindow) {
     let point = CGPoint(
         x: window.frame.minX + window.frame.width * WeChatDraftPolicy.focusPoint.x,
@@ -117,7 +75,9 @@ private func injectUnicode(_ text: String) {
 @main
 struct DraftMain {
     static func main() async {
-        _ = NSApplication.shared
+        let application = NSApplication.shared
+        application.setActivationPolicy(.prohibited)
+        try? await Task.sleep(nanoseconds: 250_000_000)
         let args = Array(CommandLine.arguments.dropFirst())
         guard args.count == 3,
               args[0] == "--expected-conversation",
@@ -140,10 +100,11 @@ struct DraftMain {
 
         do {
             let source = NativeWindowSource()
-            let (beforeWindow, _, beforeIdentity, beforeDraft) = try await capture(source)
-            let beforeState = WeChatDraftPolicy.readState(beforeDraft)
-            guard beforeIdentity.conversationFingerprint == expectedConversation,
-                  !beforeIdentity.partialReasons.contains("CONVERSATION_IDENTITY_UNRESOLVED")
+            guard wechatIsFrontmost() else { throw DraftError.prerequisites }
+            let before = try await WeChatComposerProbe.capture(source: source)
+            let beforeState = WeChatDraftPolicy.readState(before.draftSnapshot)
+            guard before.privateSnapshot.conversationFingerprint == expectedConversation,
+                  !before.privateSnapshot.partialReasons.contains("CONVERSATION_IDENTITY_UNRESOLVED")
             else {
                 write(DraftReport(status: "IDENTITY_MISMATCH", writeAttempted: false,
                                   writeVerified: false, draftStateBefore: beforeState))
@@ -155,7 +116,7 @@ struct DraftMain {
                 return
             }
 
-            clickComposer(window: beforeWindow)
+            clickComposer(window: before.window)
             try await Task.sleep(nanoseconds: 200_000_000)
             guard wechatIsFrontmost() else {
                 write(DraftReport(status: "TARGET_CHANGED_BEFORE_WRITE", writeAttempted: false,
@@ -165,16 +126,16 @@ struct DraftMain {
             injectUnicode(text)
             try await Task.sleep(nanoseconds: 700_000_000)
 
-            let (_, _, afterIdentity, afterDraft) = try await capture(source)
-            guard afterIdentity.applicationSessionFingerprint
-                    == beforeIdentity.applicationSessionFingerprint,
-                  afterIdentity.conversationFingerprint == expectedConversation
+            let after = try await WeChatComposerProbe.capture(source: source)
+            guard after.privateSnapshot.applicationSessionFingerprint
+                    == before.privateSnapshot.applicationSessionFingerprint,
+                  after.privateSnapshot.conversationFingerprint == expectedConversation
             else {
                 write(DraftReport(status: "TARGET_CHANGED_AFTER_WRITE", writeAttempted: true,
                                   writeVerified: false, draftStateBefore: beforeState))
                 return
             }
-            let verified = WeChatDraftPolicy.verified(text, snapshot: afterDraft)
+            let verified = WeChatDraftPolicy.verified(text, snapshot: after.draftSnapshot)
             write(DraftReport(status: verified ? "DRAFT_WRITE_VERIFIED" : "DRAFT_WRITE_UNVERIFIED",
                               writeAttempted: true, writeVerified: verified,
                               draftStateBefore: beforeState))

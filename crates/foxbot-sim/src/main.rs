@@ -21,7 +21,7 @@ fn run() -> Result<()> {
     let command = args.next().unwrap_or_else(|| "help".into());
     if matches!(command.as_str(), "help" | "--help" | "-h") {
         println!(
-            "foxbot-sim <demo|inspect|prepare|dispatch-prepared|reconcile> [STATE_DIR]\n\
+            "foxbot-sim <demo|inspect|prepare|gate-only|dispatch-prepared|reconcile> [STATE_DIR]\n\
             Synthetic data only; default STATE_DIR=.foxbot-sim.\n\
             Internal process tests: hold-lock, pause-before-send, pause-after-send."
         );
@@ -32,6 +32,7 @@ fn run() -> Result<()> {
         "demo"
             | "inspect"
             | "prepare"
+            | "gate-only"
             | "dispatch-prepared"
             | "reconcile"
             | "hold-lock"
@@ -83,6 +84,38 @@ fn run() -> Result<()> {
     let mut provider = FixedReply::new("模拟回复：请按测试说明安装。此消息不会发送到真实软件。");
     if let Some(request) = runtime.generate_once(&key, 3_000, None, &mut provider)? {
         let action = runtime.prepare_send(&request, 3_000, false)?;
+        if command == "gate-only" {
+            let before = channel.inner.live.clone();
+            let fill_gate = runtime.preview_before_fill_gate(&action, 3_000, &before)?;
+            let (payload, state_before) = runtime.action(&action)?;
+            let mut after = before.clone();
+            after.draft = Draft::Text(payload.text.clone());
+            let send_gate = runtime.preview_before_send_gate(&action, 3_000, &before, &after)?;
+            let (_, state_after) = runtime.action(&action)?;
+            if !fill_gate.allowed
+                || !send_gate.allowed
+                || state_before != ActionState::Prepared
+                || state_after != ActionState::Prepared
+                || channel.inner.fill_calls != 0
+                || channel.inner.send_calls != 0
+            {
+                return Err(Error::Blocked("safe send gate smoke"));
+            }
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "simulation_only": true,
+                    "status": "SAFE_SEND_GATE_PASS",
+                    "before_fill": fill_gate,
+                    "before_send": send_gate,
+                    "action_state": state_after,
+                    "fill_calls": channel.inner.fill_calls,
+                    "send_calls": channel.inner.send_calls,
+                    "synthetic_outgoing_count": channel.inner.sent.len()
+                }))?
+            );
+            return Ok(());
+        }
         if command != "prepare" {
             runtime.dispatch(&action, 3_000, &mut channel)?;
         }

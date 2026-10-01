@@ -320,21 +320,30 @@ pub enum Draft {
 pub struct LiveTarget {
     pub key: ConversationKey,
     pub identity_epoch: u64,
+    /// Opaque platform process/login-session evidence. Never derived from chat text.
+    pub application_session_ref: String,
+    /// Opaque current-conversation surface evidence, e.g. a bound visual fingerprint.
+    pub conversation_surface_ref: String,
     pub window_ref: String,
     pub editor_ref: String,
     pub layout_revision: u64,
     pub draft: Draft,
     /// A fresh adapter observation reports changed message context during execution.
     pub conversation_changed: bool,
+    /// A false composing value is authoritative only when this evidence is true.
+    pub composition_verified: bool,
     pub composing: bool,
     pub user_active: bool,
     pub permitted: bool,
+    pub frontmost: bool,
 }
 
 impl LiveTarget {
     pub(crate) fn same_surface(&self, other: &Self) -> bool {
         self.key == other.key
             && self.identity_epoch == other.identity_epoch
+            && self.application_session_ref == other.application_session_ref
+            && self.conversation_surface_ref == other.conversation_surface_ref
             && self.window_ref == other.window_ref
             && self.editor_ref == other.editor_ref
             && self.layout_revision == other.layout_revision
@@ -342,13 +351,56 @@ impl LiveTarget {
     pub(crate) fn accepts(&self, action: &OutboundAction) -> bool {
         self.key == action.target
             && self.identity_epoch == action.identity_epoch
+            && self.composition_verified
             && !self.composing
             && !self.user_active
             && !self.conversation_changed
             && self.permitted
+            && self.frontmost
+            && !self.application_session_ref.is_empty()
+            && !self.conversation_surface_ref.is_empty()
             && !self.window_ref.is_empty()
             && !self.editor_ref.is_empty()
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum SendGatePhase {
+    BeforeFill,
+    BeforeSend,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum SendGateBlocker {
+    HostPaused,
+    ActionState,
+    StaleAction,
+    AttemptBudget,
+    UnresolvedPriorSend,
+    TargetMismatch,
+    IdentityEpochMismatch,
+    ApplicationSessionMissing,
+    ConversationSurfaceMissing,
+    SurfaceMissing,
+    NotFrontmost,
+    ConversationChanged,
+    CompositionUnverified,
+    Composing,
+    UserActive,
+    NotPermitted,
+    DraftNotEmpty,
+    DraftMismatch,
+    SurfaceChanged,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SendGateReport {
+    pub phase: SendGatePhase,
+    pub allowed: bool,
+    pub blockers: Vec<SendGateBlocker>,
 }
 
 #[derive(Clone, Debug)]

@@ -528,6 +528,195 @@ fn successful_send_is_observed_not_claimed_delivered_and_cannot_repeat() {
 }
 
 #[test]
+fn safe_send_gate_preview_is_side_effect_free() {
+    let (_dir, mut runtime, binding) = setup();
+    let action_id = prepared(&mut runtime, &binding.key);
+    let channel = MockChannel::new(&binding.key);
+    let before = channel.live.clone();
+
+    let fill_gate = runtime
+        .preview_before_fill_gate(&action_id, 1, &before)
+        .unwrap();
+    assert_eq!(fill_gate.phase, SendGatePhase::BeforeFill);
+    assert!(fill_gate.allowed);
+    assert!(fill_gate.blockers.is_empty());
+    assert_eq!(runtime.action(&action_id).unwrap().1, ActionState::Prepared);
+    assert_eq!(channel.fill_calls, 0);
+    assert_eq!(channel.send_calls, 0);
+
+    let (action, _) = runtime.action(&action_id).unwrap();
+    let mut after = before.clone();
+    after.draft = Draft::Text(action.text.clone());
+    let send_gate = runtime
+        .preview_before_send_gate(&action_id, 1, &before, &after)
+        .unwrap();
+    assert_eq!(send_gate.phase, SendGatePhase::BeforeSend);
+    assert!(send_gate.allowed);
+    assert!(send_gate.blockers.is_empty());
+    assert_eq!(runtime.action(&action_id).unwrap().1, ActionState::Prepared);
+    assert_eq!(channel.fill_calls, 0);
+    assert_eq!(channel.send_calls, 0);
+}
+
+#[test]
+fn safe_send_gate_reports_preflight_blockers_without_native_calls() {
+    for case in 0..12 {
+        let (_dir, mut runtime, binding) = setup();
+        let action_id = prepared(&mut runtime, &binding.key);
+        let channel = MockChannel::new(&binding.key);
+        let mut live = channel.live.clone();
+        let expected = match case {
+            0 => {
+                live.application_session_ref.clear();
+                SendGateBlocker::ApplicationSessionMissing
+            }
+            1 => {
+                live.conversation_surface_ref.clear();
+                SendGateBlocker::ConversationSurfaceMissing
+            }
+            2 => {
+                live.window_ref.clear();
+                SendGateBlocker::SurfaceMissing
+            }
+            3 => {
+                live.frontmost = false;
+                SendGateBlocker::NotFrontmost
+            }
+            4 => {
+                live.conversation_changed = true;
+                SendGateBlocker::ConversationChanged
+            }
+            5 => {
+                live.composition_verified = false;
+                SendGateBlocker::CompositionUnverified
+            }
+            6 => {
+                live.composing = true;
+                SendGateBlocker::Composing
+            }
+            7 => {
+                live.user_active = true;
+                SendGateBlocker::UserActive
+            }
+            8 => {
+                live.permitted = false;
+                SendGateBlocker::NotPermitted
+            }
+            9 => {
+                live.draft = Draft::Text("existing user draft".into());
+                SendGateBlocker::DraftNotEmpty
+            }
+            10 => {
+                live.key.conversation = "other-conversation".into();
+                SendGateBlocker::TargetMismatch
+            }
+            _ => {
+                live.identity_epoch += 1;
+                SendGateBlocker::IdentityEpochMismatch
+            }
+        };
+        let gate = runtime
+            .preview_before_fill_gate(&action_id, 1, &live)
+            .unwrap();
+        assert!(!gate.allowed, "case {case}");
+        assert!(
+            gate.blockers.contains(&expected),
+            "case {case}: {:?}",
+            gate.blockers
+        );
+        assert_eq!(runtime.action(&action_id).unwrap().1, ActionState::Prepared);
+        assert_eq!(channel.fill_calls, 0);
+        assert_eq!(channel.send_calls, 0);
+    }
+}
+
+#[test]
+fn safe_send_gate_rechecks_surface_and_exact_draft_after_fill() {
+    for case in 0..7 {
+        let (_dir, mut runtime, binding) = setup();
+        let action_id = prepared(&mut runtime, &binding.key);
+        let channel = MockChannel::new(&binding.key);
+        let before = channel.live.clone();
+        let (action, _) = runtime.action(&action_id).unwrap();
+        let mut after = before.clone();
+        after.draft = Draft::Text(action.text.clone());
+        let expected = match case {
+            0 => {
+                after.application_session_ref = "different-session".into();
+                SendGateBlocker::SurfaceChanged
+            }
+            1 => {
+                after.conversation_surface_ref = "different-conversation-surface".into();
+                SendGateBlocker::SurfaceChanged
+            }
+            2 => {
+                after.window_ref = "different-window".into();
+                SendGateBlocker::SurfaceChanged
+            }
+            3 => {
+                after.editor_ref = "different-editor".into();
+                SendGateBlocker::SurfaceChanged
+            }
+            4 => {
+                after.layout_revision += 1;
+                SendGateBlocker::SurfaceChanged
+            }
+            5 => {
+                after.draft = Draft::Text("human edited draft".into());
+                SendGateBlocker::DraftMismatch
+            }
+            _ => {
+                after.frontmost = false;
+                SendGateBlocker::NotFrontmost
+            }
+        };
+        let gate = runtime
+            .preview_before_send_gate(&action_id, 1, &before, &after)
+            .unwrap();
+        assert!(!gate.allowed, "case {case}");
+        assert!(
+            gate.blockers.contains(&expected),
+            "case {case}: {:?}",
+            gate.blockers
+        );
+        assert_eq!(runtime.action(&action_id).unwrap().1, ActionState::Prepared);
+        assert_eq!(channel.fill_calls, 0);
+        assert_eq!(channel.send_calls, 0);
+    }
+}
+
+#[test]
+fn safe_send_gate_detects_new_revision_and_host_pause_before_gui_work() {
+    {
+        let (_dir, mut runtime, binding) = setup();
+        let action_id = prepared(&mut runtime, &binding.key);
+        let channel = MockChannel::new(&binding.key);
+        incoming(&mut runtime, &binding.key, "newer", 2);
+        let gate = runtime
+            .preview_before_fill_gate(&action_id, 2, &channel.live)
+            .unwrap();
+        assert!(!gate.allowed);
+        assert!(gate.blockers.contains(&SendGateBlocker::ActionState));
+        assert!(gate.blockers.contains(&SendGateBlocker::StaleAction));
+        assert_eq!(channel.fill_calls, 0);
+        assert_eq!(channel.send_calls, 0);
+    }
+    {
+        let (_dir, mut runtime, binding) = setup();
+        let action_id = prepared(&mut runtime, &binding.key);
+        let channel = MockChannel::new(&binding.key);
+        runtime.set_host_paused(true).unwrap();
+        let gate = runtime
+            .preview_before_fill_gate(&action_id, 2, &channel.live)
+            .unwrap();
+        assert!(!gate.allowed);
+        assert!(gate.blockers.contains(&SendGateBlocker::HostPaused));
+        assert_eq!(channel.fill_calls, 0);
+        assert_eq!(channel.send_calls, 0);
+    }
+}
+
+#[test]
 fn live_identity_draft_permission_and_composition_guards() {
     for case in 0..7 {
         let (_dir, mut runtime, binding) = setup();

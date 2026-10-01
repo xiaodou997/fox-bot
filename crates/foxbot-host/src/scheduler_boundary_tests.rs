@@ -111,3 +111,21 @@ async fn a_stop_signal_observed_at_tick_boundary_prevents_side_effects() {
     assert_eq!(host.channel.send_calls, 0);
     host.shutdown().await.unwrap();
 }
+
+#[tokio::test]
+async fn replaced_device_owner_lock_fails_before_fill_or_send() {
+    let (dir, mut host, _handle, _listener, _) = ready_host().await;
+    let lock = dir.path().join("owner").join("device-owner.lock");
+    std::fs::remove_file(&lock).unwrap();
+    std::fs::write(&lock, b"replacement").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&lock, std::fs::Permissions::from_mode(0o600)).unwrap();
+    }
+
+    assert!(matches!(host.tick(), Err(HostError::Ownership)));
+    assert_eq!(host.channel.fill_calls, 0);
+    assert_eq!(host.channel.send_calls, 0);
+    host.shutdown().await.unwrap();
+}

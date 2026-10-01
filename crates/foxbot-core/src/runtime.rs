@@ -689,6 +689,161 @@ impl Runtime {
         Ok((action, ActionState::parse(&state)?))
     }
 
+    pub fn preview_before_fill_gate(
+        &self,
+        action_id: &str,
+        now_ms: u64,
+        live: &LiveTarget,
+    ) -> Result<SendGateReport> {
+        self.evaluate_send_gate(
+            action_id,
+            now_ms,
+            live,
+            SendGatePhase::BeforeFill,
+            None,
+            &[ActionState::Prepared],
+        )
+    }
+
+    pub fn preview_before_send_gate(
+        &self,
+        action_id: &str,
+        now_ms: u64,
+        before: &LiveTarget,
+        after: &LiveTarget,
+    ) -> Result<SendGateReport> {
+        self.evaluate_send_gate(
+            action_id,
+            now_ms,
+            after,
+            SendGatePhase::BeforeSend,
+            Some(before),
+            &[ActionState::Prepared],
+        )
+    }
+
+    fn persistent_send_blockers(
+        &self,
+        action: &OutboundAction,
+        state: ActionState,
+        now_ms: u64,
+        allowed_states: &[ActionState],
+    ) -> Result<Vec<SendGateBlocker>> {
+        let task = task(&self.conn, &action.request_id)?;
+        let current = session(&self.conn, &task.conversation)?;
+        let mut blockers = Vec::new();
+        if self.host_is_paused()? {
+            blockers.push(SendGateBlocker::HostPaused);
+        }
+        if !allowed_states.contains(&state) {
+            blockers.push(SendGateBlocker::ActionState);
+        }
+        if !is_current(&task, &current, now_ms)
+            || action.target != current.binding.key
+            || action.identity_epoch != current.binding.identity_epoch
+            || action.session_revision != current.revision
+            || action.profile_version != current.binding.profile_version
+            || (current.binding.mode != Mode::AutoReply && !action.approved_by_user)
+        {
+            blockers.push(SendGateBlocker::StaleAction);
+        }
+        // The attempt budget is consumed exactly once when PREPARED crosses into
+        // EXECUTING. Rechecking it after that transition would reject the very
+        // attempt that was just authorized.
+        if state != ActionState::Executing && current.attempts >= current.binding.max_auto_sends {
+            blockers.push(SendGateBlocker::AttemptBudget);
+        }
+        let unresolved: bool = self.conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM outbox WHERE conversation=?1 AND id<>?2
+             AND state IN ('EXECUTING','SUBMITTED','UNKNOWN'))",
+            params![task.conversation, action.action_id],
+            |row| row.get(0),
+        )?;
+        if unresolved {
+            blockers.push(SendGateBlocker::UnresolvedPriorSend);
+        }
+        Ok(blockers)
+    }
+
+    fn evaluate_send_gate(
+        &self,
+        action_id: &str,
+        now_ms: u64,
+        live: &LiveTarget,
+        phase: SendGatePhase,
+        before: Option<&LiveTarget>,
+        allowed_states: &[ActionState],
+    ) -> Result<SendGateReport> {
+        let (action, state) = self.action(action_id)?;
+        let mut blockers = self.persistent_send_blockers(&action, state, now_ms, allowed_states)?;
+
+        if live.key != action.target {
+            blockers.push(SendGateBlocker::TargetMismatch);
+        }
+        if live.identity_epoch != action.identity_epoch {
+            blockers.push(SendGateBlocker::IdentityEpochMismatch);
+        }
+        if live.application_session_ref.is_empty() {
+            blockers.push(SendGateBlocker::ApplicationSessionMissing);
+        }
+        if live.conversation_surface_ref.is_empty() {
+            blockers.push(SendGateBlocker::ConversationSurfaceMissing);
+        }
+        if live.window_ref.is_empty() || live.editor_ref.is_empty() {
+            blockers.push(SendGateBlocker::SurfaceMissing);
+        }
+        if !live.frontmost {
+            blockers.push(SendGateBlocker::NotFrontmost);
+        }
+        if live.conversation_changed {
+            blockers.push(SendGateBlocker::ConversationChanged);
+        }
+        if !live.composition_verified {
+            blockers.push(SendGateBlocker::CompositionUnverified);
+        }
+        if live.composing {
+            blockers.push(SendGateBlocker::Composing);
+        }
+        if live.user_active {
+            blockers.push(SendGateBlocker::UserActive);
+        }
+        if !live.permitted {
+            blockers.push(SendGateBlocker::NotPermitted);
+        }
+
+        match phase {
+            SendGatePhase::BeforeFill => {
+                if live.draft != Draft::Empty {
+                    blockers.push(SendGateBlocker::DraftNotEmpty);
+                }
+            }
+            SendGatePhase::BeforeSend => {
+                let Some(before) = before else {
+                    blockers.push(SendGateBlocker::SurfaceChanged);
+                    return Ok(SendGateReport {
+                        phase,
+                        allowed: false,
+                        blockers,
+                    });
+                };
+                if !before.same_surface(live) {
+                    blockers.push(SendGateBlocker::SurfaceChanged);
+                }
+                if live.draft != Draft::Text(action.text.clone()) {
+                    blockers.push(SendGateBlocker::DraftMismatch);
+                }
+            }
+        }
+
+        blockers.sort_by_key(|blocker| *blocker as u8);
+        blockers.dedup();
+        Ok(SendGateReport {
+            phase,
+            allowed: blockers.is_empty(),
+            blockers,
+        })
+    }
+
     /// A single owner and &mut borrow serialize GUI calls. Platform workers must not
     /// retain these capabilities after returning or after the process owner exits.
     pub fn dispatch<C: MessageChannel>(
@@ -698,35 +853,46 @@ impl Runtime {
         channel: &mut C,
     ) -> Result<ActionState> {
         let (action, state) = self.action(action_id)?;
-        if self.host_is_paused()? {
-            return Err(Error::Blocked("host paused"));
-        }
         if state != ActionState::Prepared {
             return Err(Error::Stale);
         }
-        let task = task(&self.conn, &action.request_id)?;
-        let current = session(&self.conn, &task.conversation)?;
-        if !is_current(&task, &current, now_ms)
-            || action.identity_epoch != current.binding.identity_epoch
-            || action.target != current.binding.key
-            || action.session_revision != current.revision
-            || action.profile_version != current.binding.profile_version
-            || (current.binding.mode != Mode::AutoReply && !action.approved_by_user)
-        {
+        let persistent =
+            self.persistent_send_blockers(&action, state, now_ms, &[ActionState::Prepared])?;
+        if persistent.contains(&SendGateBlocker::HostPaused) {
+            return Err(Error::Blocked("host paused"));
+        }
+        if persistent.contains(&SendGateBlocker::StaleAction) {
             self.set_action(action_id, ActionState::Stale, "stale_target")?;
             return Ok(ActionState::Stale);
         }
-        if current.attempts >= current.binding.max_auto_sends {
-            self.set_action(action_id, ActionState::Blocked, "attempt_budget")?;
+        if !persistent.is_empty() {
+            self.set_action(action_id, ActionState::Blocked, "persistent_preflight")?;
             return Ok(ActionState::Blocked);
         }
+        let task = task(&self.conn, &action.request_id)?;
         let before = match channel.inspect(&action.target) {
-            Ok(live) if live.accepts(&action) && live.draft == Draft::Empty => live,
-            _ => {
+            Ok(live) => live,
+            Err(_) => {
                 self.set_action(action_id, ActionState::Blocked, "preflight")?;
                 return Ok(ActionState::Blocked);
             }
         };
+        let preflight = self.evaluate_send_gate(
+            action_id,
+            now_ms,
+            &before,
+            SendGatePhase::BeforeFill,
+            None,
+            &[ActionState::Prepared],
+        )?;
+        if preflight.blockers.contains(&SendGateBlocker::StaleAction) {
+            self.set_action(action_id, ActionState::Stale, "stale_target")?;
+            return Ok(ActionState::Stale);
+        }
+        if !preflight.allowed {
+            self.set_action(action_id, ActionState::Blocked, "preflight")?;
+            return Ok(ActionState::Blocked);
+        }
         {
             let tx = self
                 .conn
@@ -745,18 +911,24 @@ impl Runtime {
             return Ok(ActionState::Unknown);
         }
         let after = match channel.inspect(&action.target) {
-            Ok(live)
-                if live.accepts(&action)
-                    && before.same_surface(&live)
-                    && live.draft == Draft::Text(action.text.clone()) =>
-            {
-                live
-            }
-            _ => {
+            Ok(live) => live,
+            Err(_) => {
                 self.set_action(action_id, ActionState::Unknown, "readback_uncertain")?;
                 return Ok(ActionState::Unknown);
             }
         };
+        let send_gate = self.evaluate_send_gate(
+            action_id,
+            now_ms,
+            &after,
+            SendGatePhase::BeforeSend,
+            Some(&before),
+            &[ActionState::Executing],
+        )?;
+        if !send_gate.allowed {
+            self.set_action(action_id, ActionState::Unknown, "send_gate_uncertain")?;
+            return Ok(ActionState::Unknown);
+        }
         let evidence = channel
             .send(&action, &after)
             .unwrap_or(SendEvidence::Unknown);

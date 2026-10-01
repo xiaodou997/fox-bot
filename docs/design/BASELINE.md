@@ -3,7 +3,7 @@
 - 文档编号：FB-BASELINE-001
 - 日期：2026-09-30
 - 性质：实现前设计基线，不是产品 v0.1 发布或功能冻结声明。
-- 当前实现：G1a～G1c、G2a～G2d 已完成；macOS 微信 current-session 真实读取链已于 2026-09-30 Freeze。G3a Draft Writer 已实现测试级真实回填：exact conversation fingerprint + 微信前台 + OCR 草稿 preflight 后，CGEvent Unicode 写入并由同窗口 OCR 回读确认；已有可见草稿拒绝覆盖。由于微信 AX 不暴露可写编辑器，C05 仍是 OCR heuristic，不能检测全部 IME/隐藏草稿状态；G3a 没有 Enter/点击发送，G3b/G3c 仍为独立门禁。
+- 当前实现：G1a～G1c、G2a～G2d 已完成；macOS 微信 current-session 真实读取链已 Freeze。G3a 已实现测试级真实回填；G3b 已把 safe-send 判定从真正 dispatch 中拆出为无副作用的 `BEFORE_FILL` / `BEFORE_SEND` 双门禁，并把 application-session、conversation surface、frontmost、composition_verified、draft exact-match、revision、attempt budget、UNKNOWN/SUBMITTED prior-send 与 DeviceOwner/input-queue 边界纳入统一规则。真实微信 no-send probe 只剩 `COMPOSING_UNVERIFIED`，因此真实发送仍禁止。
 - 关联：[文档导航](../README.md) · [适配矩阵](../adapters/CAPABILITY_MATRIX.md) · [验收清单](../acceptance/ACCEPTANCE_CHECKLIST.md) · [来源审计](../references/UPSTREAM_AUDIT.md)
 
 ## 1. 已确定的目标与约束

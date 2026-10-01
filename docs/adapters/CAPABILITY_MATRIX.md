@@ -3,7 +3,7 @@
 - 编号：FB-MATRIX-001
 - 日期：2026-10-01
 - 适用设计：[FB-BASELINE-001](../design/BASELINE.md)
-- 状态：完整聊天适配器仍未实现/未验收；macOS 微信 current-session 的 G2 只读链已完成真实 Freeze，G3a 已取得测试级真实 draft fill / OCR verify 证据，但 C05 仍为 heuristic，发送、导航与恢复继续独立验收。上游源码只能作为路径参考。
+- 状态：完整聊天适配器仍未实现/未验收；macOS 微信 current-session 的 G2 只读链已完成真实 Freeze，G3a 已取得测试级真实 draft fill / OCR verify，G3b Core/Host safe-send gate 已 PASS；native send-ready 仍因 IME composing 无可靠语义证据而 BLOCKED。发送、导航与恢复继续独立验收。
 - 来源：[固定提交与审计记录](../references/UPSTREAM_AUDIT.md)
 
 ## 1. 状态语义
@@ -28,7 +28,7 @@
 | AD-QQ | Android / QQ | PRIMARY | 无障碍 resource-id / text；气泡布局用于方向解析 | ACTION_SET_TEXT / 粘贴回填，不发送 | PLANNED；NOT_RUN |
 | AD-X | Android / X 私信 | PRIMARY | Compose 节点 contentDescription 解析 | 通用输入框回填，不发送 | PLANNED；NOT_RUN |
 | AD-FS | Android / 飞书 | PRIMARY | 无障碍气泡矩形/状态＋本地 ML Kit OCR | 通用输入框回填，不发送 | PLANNED；NOT_RUN |
-| MC-WX | macOS / 微信 | PRIMARY | CaptureApp → 窗口截图与 Apple Vision 路径 | CGEvent Unicode 测试回填，不发送 | G2 READ FREEZE；G3a C06 REAL PASS (TEST ONLY)；C05 HEURISTIC；C07～C10 NOT_RUN |
+| MC-WX | macOS / 微信 | PRIMARY | CaptureApp → 窗口截图与 Apple Vision 路径 | CGEvent Unicode 测试回填，不发送 | G2 READ FREEZE；G3a C06 REAL PASS (TEST ONLY)；G3b CORE/HOST PASS、NATIVE BLOCKED(COMPOSING)；C07～C10 NOT_RUN |
 | MC-QQ | macOS / QQ | PRIMARY | AXApp → AX 文本/类属性解析 | AX 设值及输入事件降级；不发送 | PLANNED；NOT_RUN |
 | WIN-WX | Windows / 微信 | PRIMARY | 上游 README 描述 WGC＋RapidOCR | app/fill.py 坐标定位＋剪贴板粘贴；不发送 | PLANNED；NOT_RUN |
 | AD-WX | Android / 微信 | PROBE_ONLY | 上游主动禁用微信入口；旧适配代码仍保留 | 不可据此宣称能够采集、回填或发送 | PLANNED；NOT_RUN；自动发送关闭 |
@@ -226,3 +226,16 @@ known_gaps:
 | 发送动作 | NOT IMPLEMENTED | report 固定 `send_attempted=false`；代码无 Enter/点击发送路径 | C07/C08 全部留给 G3b/G3c |
 
 [G3a 说明](../development/G3A_DRAFT_WRITER.md)和[真实回执](../acceptance/receipts/2026-10-01-g3a-draft-writer.md)记录本轮真机证据。G3a PASS 只表示受限测试条件下可安全回填并回读，不提升 AUTO_REPLY。
+
+### G3b Safe Send Gate（发送动作仍不存在）
+
+| 对象 | 实现 | 本轮状态 | 未覆盖 / 限制 |
+| --- | --- | --- | --- |
+| Runtime BEFORE_FILL | IMPLEMENTED / PASS | 无副作用 preview 检查 host pause、action/revision/profile、attempt budget、prior UNKNOWN/SUBMITTED、target/identity、app-session、conversation surface、frontmost、conversation_changed、composition_verified/composing、user_active、permission、draft empty | 需要具体平台提供可信 live facts |
+| Runtime BEFORE_SEND | IMPLEMENTED / PASS | fill 后必须同 app-session / conversation surface / window / editor / layout，且 draft exact-match outbound text；失败时 dispatch 进入 UNKNOWN 且不调用 send | 本阶段不触发真实 send |
+| Gate-only smoke | PASS | 两阶段均 allowed；action 仍 PREPARED；fill_calls=0、send_calls=0、outgoing=0 | synthetic only |
+| Host GUI ownership | PASS | queued incoming / manual own output / stop / DeviceOwner inode replacement 均在 fill/send 前阻断 | 多设备全局排他仍不在一期内 |
+| MC-WX native facts | REAL NO-SEND PARTIAL PASS | app-session=true、conversation=true、draft=true、frontmost=true、stable-two-reads=true、recent-user-input=false；write/send ops=0 | `COMPOSING_UNVERIFIED` 为唯一 blocker |
+| C07 send | NOT IMPLEMENTED | 无 Enter/Return、无发送按钮 click | G3c 继续 BLOCKED |
+
+[G3b 说明](../development/G3B_SAFE_SEND_GATE.md)与[回执](../acceptance/receipts/2026-10-01-g3b-safe-send-gate.md)记录规则与真机结果。Gate BLOCKED 是正确安全结果，不得通过把 IME unknown 当 false 来升级为 READY。
