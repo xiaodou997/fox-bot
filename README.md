@@ -2,7 +2,7 @@
 
 面向微信、QQ、飞书和 X 私信的跨平台消息自动化客户端。
 
-**当前状态：G3c-1 单条发送已真实收口；G3c-2 新消息与 HTTP 回复服务的单次联调入口已实现，真实模型联调待配置。** 已有基线准备、新 incoming 识别、模型回复、原生发送确认和幂等重放代码；未取得真实模型端到端验收，也没有开启持续 AUTO_REPLY。G3c-2 配置与入口见[真实回复联调说明](docs/development/G3C2_REAL_REPLY.md)。桌面界面和 APK 未实现。入口与边界见[G3c-1 说明](docs/development/G3C1_SINGLE_REAL_SEND.md)，本轮状态见[单条发送收口回执](docs/acceptance/receipts/2026-10-01-g3c1-closeout.md)，历史证据见[文档导航](docs/README.md)。
+**当前状态：G3c-1 单条发送已真实收口；G3c-2 新消息与 HTTP 回复服务的单次联调入口已实现，真实模型联调待配置。** 已有基线准备、新 incoming 识别、模型回复、原生发送确认和幂等重放代码；未取得真实模型端到端验收，也没有开启持续 AUTO_REPLY。G3c-2 配置与入口见[真实回复联调说明](docs/development/G3C2_REAL_REPLY.md)。桌面界面和 APK 未实现。入口与边界见[G3c-1 说明](docs/development/G3C1_SINGLE_REAL_SEND.md)，本轮状态见[G3c-2 联调准备回执](docs/acceptance/receipts/2026-10-01-g3c2-real-reply-readiness.md)，历史证据见[文档导航](docs/README.md)。
 
 ## 产品边界
 

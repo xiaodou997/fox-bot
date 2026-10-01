@@ -49,6 +49,7 @@ macOS 微信 G2 真实读取链已完成 Freeze；G3a 已证明测试级草稿�
 | [G3c-1 当前私聊单条真实发送](development/G3C1_SINGLE_REAL_SEND.md) | Runtime 加密待发任务、原生单次写入/点击、回执序列关联与只读重放核对 |
 | [G3c-1 收口回执](acceptance/receipts/2026-10-01-g3c1-closeout.md) | 新任务自动 VERIFIED_OUTGOING，同 RUN 重放零原生调用；Keychain 超时修复、152/61/116 回归 |
 | [G3c-2 真实消息与 AI 回复联调](development/G3C2_REAL_REPLY.md) | 单次 arm→新消息→HTTP模型→原生发送确认；配置、幂等与未实测范围 |
+| [G3c-2 联调准备回执](acceptance/receipts/2026-10-01-g3c2-real-reply-readiness.md) | 166/61/117 回归与真实私聊只读通过；实际模型和真实自动回复待配置 |
 | [G3c-1 实现旧回执](acceptance/receipts/2026-10-01-g3c1-single-real-send.md) | 先前实现回归通过、测试会话未就绪时的历史记录 |
 | [G3c-1 首次真实发送与回执修复](acceptance/receipts/2026-10-01-g3c1-real-attempt-and-receipt-fix.md) | 实际发送一次、同 RUN 不重发；修复漏裁/时间分隔并通过 149/61/113 回归；保留当时 UNKNOWN/超时历史，当前收口见新回执 |
 | [G3b Safe Send Gate 旧回执](acceptance/receipts/2026-10-01-g3b-safe-send-gate.md) | 历史 Core/Host PASS 与旧 IME 条件下的 native BLOCKED；不是新版 Gate 回执 |

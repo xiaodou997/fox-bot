@@ -2,7 +2,7 @@
 
 - 日期：2026-10-01
 - 基线：G3c-1 已在测试私聊完成固定短回复发送与自动确认。
-- 本增量：单次联调入口 IMPLEMENTED；真实模型联调必须另有回执，不能继承离线 HTTP fixture 或 G3c-1 的 PASS。
+- 本增量：单次联调入口 IMPLEMENTED / OFFLINE PASS，真实私聊只读检查通过；实际模型端到端待配置，见[本轮回执](../acceptance/receipts/2026-10-01-g3c2-real-reply-readiness.md)。不能继承离线 HTTP fixture 或 G3c-1 的真实发送 PASS。
 
 ## 1. 用户流程
 

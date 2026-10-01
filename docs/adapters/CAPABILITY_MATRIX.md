@@ -261,7 +261,7 @@ known_gaps:
 | HTTP 回复与发送 | IMPLEMENTED | 复用 Chat Completions / BusinessV1，模型返回后重检上下文；真实模型验收待配置 |
 | 重放与拒绝分支 | IMPLEMENTED | 不再调用模型/发送；UNKNOWN只读核对；超长/多行不写入、不截断 |
 
-详细步骤见[G3c-2 联调说明](../development/G3C2_REAL_REPLY.md)。离线协议测试不能自动提升为真实模型或持续值守 PASS。
+详细步骤见[G3c-2 联调说明](../development/G3C2_REAL_REPLY.md)，实际结果见[联调准备回执](../acceptance/receipts/2026-10-01-g3c2-real-reply-readiness.md)：13/13 离线检查通过（166/61/117），原测试私聊 private read 通过。真实模型端到端待配置；离线协议测试不能自动提升为真实模型或持续值守 PASS。
 
 ### G3b IME Evidence Spike（归档；不再是执行门禁）
 
