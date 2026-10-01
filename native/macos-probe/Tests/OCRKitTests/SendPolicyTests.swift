@@ -10,7 +10,7 @@ final class SendPolicyTests: XCTestCase {
                           conversation: String = "chat") -> SendObservation {
         SendObservation(applicationSession: "app", conversation: conversation, windowRef: "w", layoutRef: "l",
                         frontmost: true, conversationResolved: true, draftState: draft, draftText: "",
-                        messages: messages, sendButton: nil)
+                        messages: messages, sendButton: nil, evidenceRevision: WeChatSendPolicy.evidenceRevision)
     }
     func testNewMatchingOutgoingIsObservedNotDelivered() {
         let before = snapshot([message("a"), message("b")])
@@ -59,6 +59,54 @@ final class SendPolicyTests: XCTestCase {
         XCTAssertFalse(WeChatSendPolicy.verifiedOutgoing(before: snapshot([]),
             after: snapshot([message("unrelated"), message("reply", me: true)]), text: "reply"))
     }
+    private func ocr(_ lines: [OCRLine], complete: Bool = true) -> OCRSnapshot {
+        OCRSnapshot(lines: lines, statistics: OCRStatistics(lineCount: lines.count,
+            characterCount: lines.reduce(0) { $0 + $1.text.count }, lowConfidenceLines: 0,
+            partialReasons: complete ? [] : ["OCR_PARTIAL"], completeRecognition: complete))
+    }
+    func testBottomBubbleAboveComposerBoundaryIsIncluded() {
+        let bottom = OCRLine(text: "synthetic reply", confidence: 0.99,
+            bounds: CGRect(x: 0.80, y: 0.767, width: 0.15, height: 0.012))
+        XCTAssertEqual(WeChatSendPolicy.receiptSignatures(ocr([bottom])), [message("synthetic reply", me: true)])
+    }
+    func testComposerAndBoundaryCrossingTextAreNeverReceiptEvidence() {
+        let draft = OCRLine(text: "synthetic reply", confidence: 0.99,
+            bounds: CGRect(x: 0.80, y: 0.82, width: 0.15, height: 0.012))
+        let crossing = OCRLine(text: "synthetic reply", confidence: 0.99,
+            bounds: CGRect(x: 0.80, y: 0.785, width: 0.15, height: 0.012))
+        XCTAssertEqual(WeChatSendPolicy.receiptSignatures(ocr([draft, crossing])), [])
+    }
+    func testCenteredRelativeTimeSeparatorsDoNotBecomeUnknownMessages() {
+        for timestamp in ["今天 18:23", "昨天 09:15", "前天 08:10", "星期一 12:34", "10月1日 12:34"] {
+            let line = OCRLine(text: timestamp, confidence: 0.99,
+                bounds: CGRect(x: 0.598, y: 0.40, width: 0.07, height: 0.013))
+            XCTAssertEqual(WeChatSendPolicy.receiptSignatures(ocr([line])), [], timestamp)
+        }
+    }
+    func testTimestampTextInsideBubblesIsNotDeleted() {
+        for x in [0.33, 0.80] {
+            let line = OCRLine(text: "今天 18:23", confidence: 0.99,
+                bounds: CGRect(x: x, y: 0.40, width: 0.13, height: 0.013))
+            XCTAssertEqual(WeChatSendPolicy.receiptSignatures(ocr([line])), [message("今天 18:23", me: x > 0.7)])
+        }
+    }
+    func testIncompleteOCRStillCannotBecomeCompleteReceiptEvidence() {
+        let line = OCRLine(text: "synthetic reply", confidence: 0.99,
+            bounds: CGRect(x: 0.80, y: 0.767, width: 0.15, height: 0.012))
+        XCTAssertEqual(WeChatSendPolicy.receiptSignatures(ocr([line], complete: false)),
+                       [message("synthetic reply", me: true, complete: false)])
+    }
+    func testLegacyAndUnknownEvidenceRevisionsCannotVerifyNewObservations() {
+        let current = snapshot([message("a"), message("b")])
+        let after = snapshot(current.messages + [message("reply", me: true)])
+        let revisions: [String?] = [nil, "FUTURE_REVISION"]
+        for revision in revisions {
+            var before = current
+            before.evidenceRevision = revision
+            XCTAssertFalse(WeChatSendPolicy.verifiedOutgoing(before: before, after: after, text: "reply"))
+        }
+    }
+
     func testTextBoundsRejectControlKeysBeforeWriting() {
         for text in ["", " hello", "hello\nworld", "\t", "hello\0", String(repeating: "a", count: 81), "x|"] {
             XCTAssertFalse(WeChatSendPolicy.supportedText(text))

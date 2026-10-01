@@ -62,11 +62,11 @@ def observe():
         messages.append(sig(json.loads(marker.read_text())['text'], 'ME'))
     return {'application_session': 'c'*64, 'conversation': 'a'*64, 'window_ref': '1', 'layout_ref': 'd'*64,
             'frontmost': True, 'conversation_resolved': True, 'draft_state': 'NONEMPTY' if draft else 'EMPTY_HEURISTIC',
-            'draft_text': draft, 'messages': messages, 'send_button': {'x': .94, 'y': .94}}
+            'draft_text': draft, 'messages': messages, 'send_button': {'x': .94, 'y': .94}, 'evidence_revision': 'WECHAT_RECEIPT_V2'}
 for line in sys.stdin:
     req = json.loads(line)
     cmd = req['command']
-    result = {'schema_version': 'foxbot.native-send-worker.v1', 'id': req['id'], 'status': 'OBSERVED',
+    result = {'schema_version': 'foxbot.native-send-worker.v2', 'id': req['id'], 'status': 'OBSERVED',
               'write_attempted': False, 'send_attempted': False, 'verified_outgoing': False}
     if MODE == 'bad-id':
         result['id'] += 1
@@ -243,6 +243,58 @@ fn timeout_reaps_worker_and_never_blindly_restarts_it() {
     assert!(started.elapsed() < Duration::from_secs(3));
     assert!(child.child.try_wait().unwrap().is_some());
     assert!(child.request("inspect", None, None).is_err());
+}
+
+#[test]
+fn legacy_receipt_is_not_rewritten_or_used_to_claim_new_revision_success() {
+    let dir = tempfile::tempdir().unwrap();
+    let owner = DeviceOwner::acquire_at(&dir.path().join("device")).unwrap();
+    let entry = binding();
+    let binary = worker(dir.path(), "unknown");
+    let receipt = dir.path().join("receipt.json");
+    let mut runtime = Runtime::open_simulation(dir.path().join("runtime")).unwrap();
+    let action = prepared(&mut runtime, &entry);
+    let mut channel =
+        NativeSendChannel::start(&binary, entry.clone(), &owner, receipt.clone(), true).unwrap();
+    assert_eq!(
+        runtime.dispatch(&action, 1, &mut channel).unwrap(),
+        ActionState::Unknown
+    );
+    drop(channel);
+    let mut legacy: serde_json::Value =
+        serde_json::from_slice(&fs::read(&receipt).unwrap()).unwrap();
+    legacy["before"]
+        .as_object_mut()
+        .unwrap()
+        .remove("evidence_revision");
+    g2d_real::write_private_json(&receipt, &legacy).unwrap();
+    let bytes_before = fs::read(&receipt).unwrap();
+    let mut read_only =
+        NativeSendChannel::start(&binary, entry, &owner, receipt.clone(), false).unwrap();
+    assert_eq!(
+        runtime.reconcile(&action, &mut read_only).unwrap(),
+        ActionState::Unknown
+    );
+    assert_eq!(read_only.stats.fill_requests, 0);
+    assert_eq!(read_only.stats.send_requests, 0);
+    assert_eq!(fs::read(receipt).unwrap(), bytes_before);
+}
+
+#[test]
+fn unknown_observation_revision_is_rejected() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut child =
+        Worker::start(&worker(dir.path(), "ok"), false, Duration::from_secs(20)).unwrap();
+    let mut observation = child
+        .request("inspect", None, None)
+        .unwrap()
+        .observation
+        .unwrap();
+    assert!(observation.validate().is_ok());
+    observation.evidence_revision = Some("FUTURE_REVISION".into());
+    assert!(observation.validate().is_err());
+    observation.evidence_revision = None;
+    assert!(observation.validate().is_err());
 }
 
 #[test]

@@ -20,6 +20,8 @@ use std::{
     time::Duration,
 };
 
+const RECEIPT_REVISION: &str = "WECHAT_RECEIPT_V2";
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SendPoint {
@@ -46,6 +48,9 @@ pub struct NativeSendObservation {
     pub draft_text: Option<String>,
     pub messages: Vec<MessageSignature>,
     pub send_button: Option<SendPoint>,
+    /// Legacy receipt contexts decode as None, never upgraded implicitly.
+    #[serde(default)]
+    pub evidence_revision: Option<String>,
 }
 impl NativeSendObservation {
     fn validate(&self) -> Result<()> {
@@ -56,7 +61,8 @@ impl NativeSendObservation {
                     .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
                 && value.bytes().any(|b| b != b'0')
         }
-        if !hash(&self.application_session)
+        if self.evidence_revision.as_deref() != Some(RECEIPT_REVISION)
+            || !hash(&self.application_session)
             || !hash(&self.conversation)
             || !hash(&self.layout_ref)
             || self.window_ref.is_empty()
@@ -211,7 +217,7 @@ impl Worker {
             .map_err(|_| HostError::NativeWorker)?;
         let reply: WorkerReply =
             serde_json::from_slice(&data).map_err(|_| HostError::NativeWorker)?;
-        if reply.schema_version != "foxbot.native-send-worker.v1"
+        if reply.schema_version != "foxbot.native-send-worker.v2"
             || reply.id != id
             || (command != "fill" && reply.write_attempted)
             || (command != "send" && reply.send_attempted)
@@ -348,7 +354,9 @@ fn matching_outgoing(
     after: &NativeSendObservation,
     text: &str,
 ) -> bool {
-    if !before.same_surface(after)
+    if before.evidence_revision.as_deref() != Some(RECEIPT_REVISION)
+        || after.evidence_revision.as_deref() != Some(RECEIPT_REVISION)
+        || !before.same_surface(after)
         || !after.frontmost
         || after.draft_state != "EMPTY_HEURISTIC"
         || before

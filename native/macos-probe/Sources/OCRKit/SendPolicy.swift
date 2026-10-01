@@ -25,6 +25,8 @@ public struct SendObservation: Codable, Equatable {
     public let draftText: String?
     public let messages: [SendMessageSignature]
     public let sendButton: SendPoint?
+    /// Missing in legacy receipts. Never infer or retrofit their evidence revision.
+    public var evidenceRevision: String?
 
     public func sameSurface(as other: SendObservation) -> Bool {
         applicationSession == other.applicationSession && conversation == other.conversation
@@ -34,6 +36,7 @@ public struct SendObservation: Codable, Equatable {
 }
 
 public enum WeChatSendPolicy {
+    public static let evidenceRevision = "WECHAT_RECEIPT_V2"
     public static let controlRegion = CGRect(x: 0.86, y: 0.80, width: 0.14, height: 0.20)
 
     public static func digest(_ value: String) -> String {
@@ -60,13 +63,33 @@ public enum WeChatSendPolicy {
         return SendPoint(x: Double(candidates[0].bounds.midX), y: Double(candidates[0].bounds.midY))
     }
 
-    public static func observation(_ raw: WeChatComposerObservation, frontmost: Bool) -> SendObservation {
-        // Exclude the composer/tool strip from receipt evidence. The legacy G2 ROI overlaps it.
+    private static func isCenteredTimeSeparator(_ line: OCRLine) -> Bool {
+        // Timestamp-shaped text in an actual left/right bubble must remain a message.
+        guard (0.55...0.70).contains(line.bounds.midX), line.bounds.height <= 0.03,
+              WeChatMessageParser.direction(x: line.bounds.minX, width: line.bounds.width) == .unknown
+        else { return false }
+        return line.text.trimmingCharacters(in: .whitespacesAndNewlines).range(
+            of: #"^(今天|昨天|前天|星期[一二三四五六日天]|\d{1,2}月\d{1,2}日|\d{4}年\d{1,2}月\d{1,2}日)\s*\d{1,2}:\d{2}$"#,
+            options: .regularExpression
+        ) != nil
+    }
+
+    public static func receiptSignatures(_ snapshot: OCRSnapshot) -> [SendMessageSignature] {
+        // The old 0.765 cutoff discarded the bottom chat bubble. Share the composer boundary
+        // instead; reject boxes crossing it so draft text can never become receipt evidence.
         let chatOnly = OCRSnapshot(
-            lines: raw.chatSnapshot.lines.filter { $0.bounds.maxY < 0.765 },
-            statistics: raw.chatSnapshot.statistics
+            lines: snapshot.lines.filter {
+                $0.bounds.maxY < WeChatDraftPolicy.draftRegion.minY && !isCenteredTimeSeparator($0)
+            },
+            statistics: snapshot.statistics
         )
-        let parsed = WeChatMessageParser.parse(chatOnly, maxMessages: 64)
+        return WeChatMessageParser.parse(chatOnly, maxMessages: 64).messages.map {
+            SendMessageSignature(digest: digest($0.text), direction: $0.direction.rawValue,
+                                 complete: snapshot.statistics.completeRecognition && $0.direction != .unknown)
+        }
+    }
+
+    public static func observation(_ raw: WeChatComposerObservation, frontmost: Bool) -> SendObservation {
         let frame = raw.window.frame
         let layout = [frame.minX, frame.minY, frame.width, frame.height, raw.window.scale]
             .map { String(format: "%.4f", Double($0)) }.joined(separator: ":")
@@ -79,17 +102,16 @@ public enum WeChatSendPolicy {
             conversationResolved: !raw.privateSnapshot.partialReasons.contains("CONVERSATION_IDENTITY_UNRESOLVED"),
             draftState: WeChatDraftPolicy.readState(raw.draftSnapshot),
             draftText: WeChatDraftPolicy.observedText(raw.draftSnapshot),
-            messages: parsed.messages.map {
-                SendMessageSignature(digest: digest($0.text), direction: $0.direction.rawValue,
-                                     complete: chatOnly.statistics.completeRecognition && $0.direction != .unknown)
-            },
-            sendButton: sendButton(raw.controlSnapshot)
+            messages: receiptSignatures(raw.chatSnapshot),
+            sendButton: sendButton(raw.controlSnapshot),
+            evidenceRevision: evidenceRevision
         )
     }
 
     /// A new matching ME message after an unambiguous suffix/prefix overlap, not a delivery ACK.
     public static func verifiedOutgoing(before: SendObservation, after: SendObservation, text: String) -> Bool {
-        guard before.sameSurface(as: after), after.frontmost,
+        guard before.evidenceRevision == evidenceRevision, after.evidenceRevision == evidenceRevision,
+              before.sameSurface(as: after), after.frontmost,
               after.draftState == .emptyHeuristic,
               before.messages.allSatisfy(\.complete), after.messages.allSatisfy(\.complete)
         else { return false }

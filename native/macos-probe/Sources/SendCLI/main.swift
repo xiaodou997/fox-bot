@@ -13,7 +13,7 @@ private struct Request: Decodable {
 }
 
 private struct Reply: Encodable {
-    let schemaVersion = "foxbot.native-send-worker.v1"
+    let schemaVersion = "foxbot.native-send-worker.v2"
     let id: UInt64
     var status: String
     var observation: SendObservation?
@@ -29,6 +29,7 @@ private enum Failure: String, Error {
     case targetChanged = "TARGET_CHANGED"
     case draftNotEmpty = "DRAFT_NOT_EMPTY"
     case draftMismatch = "DRAFT_MISMATCH"
+    case receiptRevisionMismatch = "RECEIPT_REVISION_MISMATCH"
     case sendButtonUnavailable = "SEND_BUTTON_UNAVAILABLE"
     case actionAlreadyAttempted = "ACTION_ALREADY_ATTEMPTED"
     case ownerLost = "OWNER_LOST"
@@ -139,6 +140,9 @@ struct SendMain {
                     let (raw, current) = try await capture()
                     reply.observation = current
                     guard expected.sameSurface(as: current) else { throw Failure.targetChanged }
+                    guard expected.evidenceRevision == WeChatSendPolicy.evidenceRevision,
+                          current.evidenceRevision == WeChatSendPolicy.evidenceRevision
+                    else { throw Failure.receiptRevisionMismatch }
                     if request.command == "reconcile" {
                         reply.verifiedOutgoing = WeChatSendPolicy.verifiedOutgoing(before: expected, after: current, text: text)
                         reply.status = reply.verifiedOutgoing ? "VERIFIED_OUTGOING" : "UNKNOWN"
