@@ -250,7 +250,7 @@ known_gaps:
 | 同一 RUN 重放 | IMPLEMENTED | 已完成直接报告；UNKNOWN 只读核对，不再 fill/send |
 | G2 绑定衔接 | IMPLEMENTED | 重放 baseline→verified 已验收连续性，保留 durable key；不猜测新目标 |
 
-实现、命令、回归和真实验收边界见[G3c-1 说明](../development/G3C1_SINGLE_REAL_SEND.md)。此表的 IMPLEMENTED 不代表已取得真实发送 PASS。
+实现、命令、回归和真实验收边界见[G3c-1 说明](../development/G3C1_SINGLE_REAL_SEND.md)。[本轮回执](../acceptance/receipts/2026-10-01-g3c1-single-real-send.md)记录 13/13 离线回归通过；当前前台会话与原测试绑定不符，真实 write/send 为 0，真实 C07/C08 仍 NOT_RUN。此表的 IMPLEMENTED 不代表已取得真实发送 PASS。
 
 ### G3b IME Evidence Spike（归档；不再是执行门禁）
 

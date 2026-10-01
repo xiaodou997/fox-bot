@@ -2,7 +2,7 @@
 
 - 日期：2026-10-01
 - 前置：[G2 Freeze](../acceptance/receipts/2026-09-30-g2-freeze.md) · [无人值守执行契约](G3B_UNATTENDED_EXECUTION.md)
-- 状态：IMPLEMENTED；真实运行结果单独记录，不由编译或模拟测试推导。
+- 状态：IMPLEMENTED / OFFLINE PASS；真实发送因当前会话与测试绑定不符而未执行，见[本轮回执](../acceptance/receipts/2026-10-01-g3c1-single-real-send.md)。
 - 范围：macOS 微信、已绑定的当前测试私聊、固定短文本、单条发送与只读结果核对。不是完整 AUTO_REPLY，也不是多会话值守。
 
 ## 1. 闭环

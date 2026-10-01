@@ -47,6 +47,7 @@ macOS 微信 G2 真实读取链已完成 Freeze；G3a 已证明测试级草稿�
 | [G3b 无人值守独占执行](development/G3B_UNATTENDED_EXECUTION.md) | 用户运行前提、移除 IME/人工活动门禁、开发暂停交接和 G3c 路线 |
 | [G3b 无人值守调整回执](acceptance/receipts/2026-10-01-g3b-unattended-execution.md) | 固定代码提交，13/13 集成检查、Rust 137 / Python 61 / Swift 97；未执行真实发送 |
 | [G3c-1 当前私聊单条真实发送](development/G3C1_SINGLE_REAL_SEND.md) | Runtime 加密待发任务、原生单次写入/点击、回执序列关联与只读重放核对 |
+| [G3c-1 实现与验收回执](acceptance/receipts/2026-10-01-g3c1-single-real-send.md) | 13/13 集成通过，Rust 147 / Python 61 / Swift 107；当前会话不匹配，真实发送尚未执行 |
 | [G3b Safe Send Gate 旧回执](acceptance/receipts/2026-10-01-g3b-safe-send-gate.md) | 历史 Core/Host PASS 与旧 IME 条件下的 native BLOCKED；不是新版 Gate 回执 |
 | [G3b IME Evidence Spike（归档）](development/G3B_IME_EVIDENCE_SPIKE.md) | 独立诊断实验及证据边界，已退出正常执行路径，不再阻塞 G3c |
 | [G3b IME Spike 旧回执](acceptance/receipts/2026-10-01-g3b-ime-evidence-spike.md) | 当时的真实采样和实验；保留原结果，开发阻断结论已被独占契约取代 |
@@ -80,6 +81,6 @@ MC-WX 的 **G2 current-session 读取链**已有本机真实 PASS；G3a 已证�
 
 ## 6. 当前阶段和下一项
 
-G2 已 Freeze，G3a 测试级回填已通过，G3b 已按用户确认的无人值守独占前提调整。**当前推进 G3c-1：当前会话的单条真实发送与回执验证**，先固定回复文本验证 Runtime → 回填 → 发送 → 新己方消息匹配，再接真实回复服务。不再等待 IME，也不新增人工并发输入专项。开发人员操作聊天软件前使用已有 pause/stop，完成交接后显式 resume。
+G2 已 Freeze，G3a 测试级回填已通过，G3b 已按用户确认的无人值守独占前提调整。**G3c-1 实现与离线回归已通过，真实发送待测试私聊恢复前台后验收**；当前微信会话不是原授权测试目标，write/send 均未执行。完成固定回复的 Runtime → 回填 → 发送 → 新己方消息闭环后，再接真实回复服务。不再等待 IME，也不新增人工并发输入专项。开发人员操作聊天软件前使用已有 pause/stop，完成交接后显式 resume。
 
 目标应用版本与定制服务脱敏样例可在联调时补充，不阻塞模拟开发；未取得对应证据之前，不承诺真实客户端兼容性。根目录 scripts/check_docs.py 可直接检查本地 Markdown 文件目标、JSON 示例和案例引用，不联网检查外部链接。
