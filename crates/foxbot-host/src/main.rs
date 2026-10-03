@@ -127,13 +127,18 @@ async fn run() -> foxbot_host::Result<()> {
                   foxbot-host g3c-reply-check CONFIG SESSION --check-config\n\
                   foxbot-host g3c-reply-arm CONFIG WORKER SESSION RUN --allow-native-read\n\
                   foxbot-host g3c-reply-once CONFIG WORKER SESSION RUN --allow-network --allow-single-test-send\n\
+                  foxbot-host g3c-reply-recover-filled CONFIG WORKER SESSION RUN --confirm-filled-draft-send\n\
                   Test only: foxbot-host lock-probe --hold"
         );
         return Ok(());
     }
     if matches!(
         args[0].as_str(),
-        "g3c-reply-read-check" | "g3c-reply-check" | "g3c-reply-arm" | "g3c-reply-once"
+        "g3c-reply-read-check"
+            | "g3c-reply-check"
+            | "g3c-reply-arm"
+            | "g3c-reply-once"
+            | "g3c-reply-recover-filled"
     ) {
         #[cfg(not(target_os = "macos"))]
         return Err(HostError::Unsupported);
@@ -155,6 +160,16 @@ async fn run() -> foxbot_host::Result<()> {
                 && args[5] == "--allow-native-read"
             {
                 g3c_reply::arm(Path::new(&args[1]), Path::new(&args[2]), &args[3], &args[4])?
+            } else if args[0] == "g3c-reply-recover-filled"
+                && args.len() == 6
+                && args[5] == "--confirm-filled-draft-send"
+            {
+                g3c_reply::recover_filled(
+                    Path::new(&args[1]),
+                    Path::new(&args[2]),
+                    &args[3],
+                    &args[4],
+                )?
             } else if args[0] == "g3c-reply-once"
                 && args.len() == 7
                 && args[5] == "--allow-network"

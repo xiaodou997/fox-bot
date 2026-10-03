@@ -255,8 +255,9 @@ impl Worker {
             || reply.id != id
             || (command != "read" && reply.messages.is_some())
             || (command != "fill" && reply.write_attempted)
-            || (command != "send" && reply.send_attempted)
-            || (reply.verified_outgoing && !matches!(command, "send" | "reconcile"))
+            || (!matches!(command, "send" | "recover_send") && reply.send_attempted)
+            || (reply.verified_outgoing
+                && !matches!(command, "send" | "recover_send" | "reconcile"))
         {
             return Err(HostError::NativeWorker);
         }
@@ -310,6 +311,28 @@ fn read_frame(reply: WorkerReply) -> Result<NativeReadFrame> {
     })
 }
 
+fn verified_draft_text(observed: Option<&str>, expected: &str) -> bool {
+    let Some(observed) = observed else {
+        return false;
+    };
+    if observed == expected {
+        return true;
+    }
+    !expected.is_empty()
+        && !expected.contains('\n')
+        && expected.chars().all(|value| !value.is_ascii())
+        && observed.len() == expected.len() + 1
+        && observed.strip_suffix('1') == Some(expected)
+}
+
+fn supported_recovery_text(value: &str) -> bool {
+    !value.is_empty()
+        && value.encode_utf16().count() <= 80
+        && value.trim() == value
+        && !value.chars().any(char::is_control)
+        && !value.ends_with('|')
+}
+
 /// Read two stable current frames before an operator-confirmed application-session rebind.
 /// This path has no native write capability and intentionally does not assume the old binding.
 pub(crate) fn read_unbound_pair(
@@ -352,6 +375,7 @@ pub struct NativeSendChannel<'a> {
     last: Option<NativeSendObservation>,
     baseline: Option<NativeSendObservation>,
     receipt_path: PathBuf,
+    recovery_text: Option<String>,
     pub stats: NativeSendStats,
 }
 impl<'a> NativeSendChannel<'a> {
@@ -370,8 +394,39 @@ impl<'a> NativeSendChannel<'a> {
             last: None,
             baseline: None,
             receipt_path,
+            recovery_text: None,
             stats: NativeSendStats::default(),
         })
+    }
+
+    pub(crate) fn start_filled_recovery(
+        binary: &Path,
+        binding: NativeConversationBinding,
+        owner: &'a DeviceOwner,
+        receipt_path: PathBuf,
+        text: &str,
+    ) -> Result<Self> {
+        if !supported_recovery_text(text) {
+            return Err(HostError::Config);
+        }
+        let mut channel = Self::start(binary, binding, owner, receipt_path, true)?;
+        channel.recovery_text = Some(text.to_owned());
+        Ok(channel)
+    }
+
+    fn canonicalize_recovery_draft(
+        &self,
+        mut observation: NativeSendObservation,
+    ) -> Result<NativeSendObservation> {
+        if let Some(expected) = &self.recovery_text {
+            if observation.draft_state != "NONEMPTY"
+                || !verified_draft_text(observation.draft_text.as_deref(), expected)
+            {
+                return Err(HostError::Untrusted);
+            }
+            observation.draft_text = Some(expected.clone());
+        }
+        Ok(observation)
     }
     pub fn observe(&mut self) -> Result<NativeSendObservation> {
         self.owner.verify()?;
@@ -381,7 +436,8 @@ impl<'a> NativeSendChannel<'a> {
         if reply.status != "OBSERVED" {
             return Err(HostError::Untrusted);
         }
-        let observation = reply.observation.ok_or(HostError::Untrusted)?;
+        let observation =
+            self.canonicalize_recovery_draft(reply.observation.ok_or(HostError::Untrusted)?)?;
         if !observation.matches_binding(&self.binding) {
             self.stats.last_status = if observation.application_session
                 != self.binding.application_session_fingerprint
@@ -400,7 +456,8 @@ impl<'a> NativeSendChannel<'a> {
         self.stats.read_requests += 1;
         let reply = self.worker.request("read", None, None)?;
         self.stats.last_status = reply.status.clone();
-        let frame = read_frame(reply)?;
+        let mut frame = read_frame(reply)?;
+        frame.observation = self.canonicalize_recovery_draft(frame.observation)?;
         if !frame.observation.matches_binding(&self.binding) {
             return Err(HostError::Untrusted);
         }
@@ -556,9 +613,14 @@ impl MessageChannel for NativeSendChannel<'_> {
         .map_err(channel_error)?;
         self.owner.verify().map_err(channel_error)?;
         self.stats.send_requests += 1;
+        let command = if self.recovery_text.is_some() {
+            "recover_send"
+        } else {
+            "send"
+        };
         let reply = self
             .worker
-            .request("send", Some(&before), Some(action))
+            .request(command, Some(&before), Some(action))
             .map_err(channel_error)?;
         self.stats.send_attempted = Some(reply.send_attempted);
         self.stats.last_status = reply.status;

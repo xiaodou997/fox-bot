@@ -947,6 +947,70 @@ impl Runtime {
         self.record_evidence(&action, evidence, false)
     }
 
+    /// Explicit recovery for a draft that was written but whose fill readback was uncertain.
+    /// This never fills again, never bypasses target/draft checks and is bounded to the same
+    /// persisted action. Callers must additionally prove that no send receipt was created.
+    pub fn recover_filled_send<C: MessageChannel>(
+        &mut self,
+        action_id: &str,
+        now_ms: u64,
+        channel: &mut C,
+    ) -> Result<ActionState> {
+        const MAX_RECOVERY_AGE_MS: u64 = 1_800_000;
+        let (action, state) = self.action(action_id)?;
+        let reason: Option<String> = self.conn.query_row(
+            "SELECT reason FROM outbox WHERE id=?1",
+            [action_id],
+            |row| row.get(0),
+        )?;
+        if state != ActionState::Unknown || reason.as_deref() != Some("fill_uncertain") {
+            return Err(Error::Stale);
+        }
+        let task = task(&self.conn, &action.request_id)?;
+        let current = session(&self.conn, &task.conversation)?;
+        let expired =
+            now_ms < action.created_ms || now_ms - action.created_ms > MAX_RECOVERY_AGE_MS;
+        let invalid_target = !current.binding.enabled
+            || action.target != current.binding.key
+            || action.identity_epoch != current.binding.identity_epoch
+            || action.session_revision != current.revision
+            || action.profile_version != current.binding.profile_version
+            || (current.binding.mode != Mode::AutoReply && !action.approved_by_user);
+        let unresolved: bool = self.conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM outbox WHERE conversation=?1 AND id<>?2
+             AND state IN ('EXECUTING','SUBMITTED','UNKNOWN'))",
+            params![task.conversation, action.action_id],
+            |row| row.get(0),
+        )?;
+        if self.host_is_paused()?
+            || expired
+            || invalid_target
+            || current.attempts == 0
+            || current.attempts > current.binding.max_auto_sends
+            || unresolved
+        {
+            return Err(Error::Blocked("filled recovery preflight"));
+        }
+        let live = channel.inspect(&action.target)?;
+        if !live.accepts(&action) || live.draft != Draft::Text(action.text.clone()) {
+            return Err(Error::Blocked("filled recovery draft mismatch"));
+        }
+        let tx = self
+            .conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        transition(
+            &tx,
+            action_id,
+            ActionState::Executing,
+            "filled_recovery_before_send",
+        )?;
+        tx.commit()?;
+        let evidence = channel
+            .send(&action, &live)
+            .unwrap_or(SendEvidence::Unknown);
+        self.record_evidence(&action, evidence, false)
+    }
+
     pub fn reconcile<C: MessageChannel>(
         &mut self,
         action_id: &str,

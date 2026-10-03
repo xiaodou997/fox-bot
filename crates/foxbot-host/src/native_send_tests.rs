@@ -53,7 +53,7 @@ import sys, json, hashlib, pathlib, time
 root = pathlib.Path(__file__).parent
 marker = root / 'sent.json'
 allow = '--allow-single-send' in sys.argv
-draft = ''
+draft = 'FoxBot G3c1 test' if MODE == 'prefilled' else ''
 def sig(text, direction):
     return {'digest': hashlib.sha256(text.encode()).hexdigest(), 'continuity_digest': hashlib.sha256(text.encode()).hexdigest(), 'direction': direction, 'complete': True}
 def observe():
@@ -79,7 +79,7 @@ for line in sys.stdin:
             assert allow
             draft = 'wrong text' if MODE == 'bad-fill' else req['text']
             result.update(status='FILLED', write_attempted=True)
-        elif cmd == 'send':
+        elif cmd in ('send', 'recover_send'):
             assert allow
             assert not marker.exists(), 'second physical send'
             marker.write_text(json.dumps({'text': req['text'], 'sends': 1}))
@@ -348,6 +348,47 @@ fn unbound_pair_validates_current_context_before_a_binding_refresh() {
         NativeSendChannel::start(&binary, wrong, &owner, dir.path().join("receipt"), false)
             .unwrap();
     assert!(channel.read_messages().is_err());
+}
+
+#[test]
+fn filled_recovery_sends_the_existing_draft_without_a_fill_call() {
+    let dir = tempfile::tempdir().unwrap();
+    let owner = DeviceOwner::acquire_at(&dir.path().join("device")).unwrap();
+    let entry = binding();
+    let mut runtime = Runtime::open_simulation(dir.path().join("runtime")).unwrap();
+    let action_id = prepared(&mut runtime, &entry);
+    let (action, _) = runtime.action(&action_id).unwrap();
+    let mut channel = NativeSendChannel::start_filled_recovery(
+        &worker(dir.path(), "prefilled"),
+        entry,
+        &owner,
+        dir.path().join("receipt.json"),
+        &action.text,
+    )
+    .unwrap();
+    let live = channel.inspect(&action.target).unwrap();
+    assert_eq!(live.draft, Draft::Text(action.text.clone()));
+    assert!(matches!(
+        channel.send(&action, &live).unwrap(),
+        SendEvidence::ObservedOutgoing { .. }
+    ));
+    assert_eq!(channel.stats.fill_requests, 0);
+    assert_eq!(channel.stats.send_requests, 1);
+    assert_eq!(channel.stats.send_attempted, Some(true));
+}
+
+#[test]
+fn recovery_draft_caret_one_is_narrow_and_expected_aware() {
+    assert!(verified_draft_text(
+        Some("南京是一座历史文化名城1"),
+        "南京是一座历史文化名城"
+    ));
+    assert!(!verified_draft_text(
+        Some("南京是一座历史文化古城1"),
+        "南京是一座历史文化名城"
+    ));
+    assert!(!verified_draft_text(Some("reply1"), "reply"));
+    assert!(verified_draft_text(Some("版本1"), "版本1"));
 }
 
 #[test]

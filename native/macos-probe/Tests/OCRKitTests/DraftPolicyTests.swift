@@ -53,4 +53,26 @@ final class DraftPolicyTests: XCTestCase {
             snapshot: snapshot([line("FoxBot G3a Draft 732|")])
         ))
     }
+
+    func testVerificationAllowsObservedAllCJKCaretOneButNeverNormalizesDigitsGenerally() {
+        XCTAssertEqual(
+            WeChatDraftPolicy.verifiedText(
+                "南京是一座历史文化名城",
+                snapshot: snapshot([line("南京是一座历史文化名城1")])
+            ),
+            "南京是一座历史文化名城"
+        )
+        XCTAssertFalse(WeChatDraftPolicy.verified(
+            "南京是一座历史文化名城",
+            snapshot: snapshot([line("南京是一座历史文化古城1")])
+        ))
+        XCTAssertFalse(WeChatDraftPolicy.verified(
+            "reply",
+            snapshot: snapshot([line("reply1")])
+        ))
+        XCTAssertTrue(WeChatDraftPolicy.verified(
+            "版本1",
+            snapshot: snapshot([line("版本1")])
+        ))
+    }
 }

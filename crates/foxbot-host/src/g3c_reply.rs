@@ -215,22 +215,25 @@ fn run_directory(config_path: &Path, session: &str, run: &str) -> Result<PathBuf
         .join("g3c-2")
         .join(run))
 }
-fn available(observation: &NativeSendObservation) -> bool {
+fn context_available(observation: &NativeSendObservation) -> bool {
     observation.frontmost
         && observation.conversation_resolved
+        && observation.messages.iter().all(|m| m.complete)
+}
+fn available(observation: &NativeSendObservation) -> bool {
+    context_available(observation)
         && observation.draft_state == "EMPTY_HEURISTIC"
         && observation.draft_text.as_deref() == Some("")
-        && observation.messages.iter().all(|m| m.complete)
 }
 
 /// Return the one new incoming's index. Stable repeated text is not text-hash deduplicated.
-fn new_incoming(
+fn new_incoming_context(
     before: &NativeSendObservation,
     after: &NativeSendObservation,
 ) -> Result<Option<usize>> {
     before.validate()?;
     after.validate()?;
-    if !before.same_surface(after) || !available(after) {
+    if !before.same_surface(after) || !context_available(after) {
         return Err(HostError::Untrusted);
     }
     if before.same_messages(after) {
@@ -253,6 +256,15 @@ fn new_incoming(
         return Err(HostError::Untrusted);
     }
     Ok(Some(index))
+}
+fn new_incoming(
+    before: &NativeSendObservation,
+    after: &NativeSendObservation,
+) -> Result<Option<usize>> {
+    if !available(after) {
+        return Err(HostError::Untrusted);
+    }
+    new_incoming_context(before, after)
 }
 fn observation(
     binding: &NativeConversationBinding,
@@ -493,6 +505,70 @@ pub async fn execute(
         cancellation,
     )
     .await
+}
+
+/// Explicitly continue an existing UNKNOWN/fill_uncertain task. No model request and no
+/// second fill are permitted; the currently visible draft must exactly match the persisted
+/// reply and the same single incoming must still be the only change since arm.
+pub fn recover_filled(
+    config_path: &Path,
+    worker: &Path,
+    session: &str,
+    run: &str,
+) -> Result<serde_json::Value> {
+    let owner = DeviceOwner::acquire()?;
+    let directory = run_directory(config_path, session, run)?;
+    let mut state: RunState = read_private_json(&directory.join("run.json"))?;
+    let config = ReplyOnceConfig::load_selected(config_path, state.connection_id.as_deref())?;
+    let service = config.service(&NativeCredentials)?;
+    validate_state(&state, &config, &service)?;
+    let mut runtime = config.open_runtime(&directory.join("runtime"))?;
+    if state.progress != Progress::Finished
+        || state.outcome != "UNKNOWN"
+        || directory.join("receipt.json").exists()
+    {
+        return Err(HostError::Untrusted);
+    }
+    let action_id = state.action_id.clone().ok_or(HostError::Untrusted)?;
+    let (action, action_state) = runtime.action(&action_id)?;
+    if action_state != ActionState::Unknown || !supported_reply(&action.text) {
+        return Err(HostError::Untrusted);
+    }
+    let mut channel = NativeSendChannel::start_filled_recovery(
+        worker,
+        state.binding.clone(),
+        &owner,
+        directory.join("receipt.json"),
+        &action.text,
+    )?;
+    let first = channel.read_messages()?;
+    let second = channel.read_messages()?;
+    let first_index =
+        new_incoming_context(&state.baseline, &first.observation)?.ok_or(HostError::Untrusted)?;
+    let second_index =
+        new_incoming_context(&state.baseline, &second.observation)?.ok_or(HostError::Untrusted)?;
+    if first_index != second_index
+        || !first.observation.same_surface(&second.observation)
+        || !first.observation.same_messages(&second.observation)
+        || first.messages[first_index].text != second.messages[second_index].text
+        || second.observation.draft_text.as_deref() != Some(action.text.as_str())
+    {
+        return Err(HostError::Untrusted);
+    }
+    let final_state =
+        runtime.recover_filled_send(&action_id, RunClock::default().now_ms(), &mut channel)?;
+    state.outcome = serde_json::to_value(final_state)
+        .map_err(|_| HostError::Config)?
+        .as_str()
+        .ok_or(HostError::Config)?
+        .into();
+    state.progress = Progress::Finished;
+    write_private_json(&directory.join("run.json"), &state)?;
+    let mut value = report(&state, &runtime, &channel.stats, 0)?;
+    value["recovery"] = serde_json::json!("EXISTING_FILLED_DRAFT_ONLY");
+    value["feedback_status"] = serde_json::json!("NOT_REQUIRED_OR_NOT_DUE");
+    write_private_json(&directory.join("last-report.json"), &value)?;
+    Ok(value)
 }
 
 #[allow(clippy::too_many_arguments)]

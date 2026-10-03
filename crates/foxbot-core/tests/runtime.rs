@@ -780,6 +780,92 @@ fn unattended_dispatch_preserves_identity_draft_permission_and_focus_guards() {
     }
 }
 
+struct FillErrorChannel(MockChannel);
+
+impl MessageChannel for FillErrorChannel {
+    fn inspect(&mut self, target: &ConversationKey) -> Result<LiveTarget> {
+        self.0.inspect(target)
+    }
+    fn fill(&mut self, _: &OutboundAction, _: &LiveTarget) -> Result<()> {
+        self.0.fill_calls += 1;
+        Err(Error::Blocked("synthetic fill readback error"))
+    }
+    fn send(&mut self, action: &OutboundAction, expected: &LiveTarget) -> Result<SendEvidence> {
+        self.0.send(action, expected)
+    }
+    fn reconcile(&mut self, action: &OutboundAction) -> Result<SendEvidence> {
+        self.0.reconcile(action)
+    }
+}
+
+#[test]
+fn explicit_filled_recovery_sends_once_without_refilling() {
+    let (_dir, mut runtime, binding) = setup();
+    let action_id = prepared(&mut runtime, &binding.key);
+    let (action, _) = runtime.action(&action_id).unwrap();
+    let mut channel = FillErrorChannel(MockChannel::new(&binding.key));
+    assert_eq!(
+        runtime.dispatch(&action_id, 1, &mut channel).unwrap(),
+        ActionState::Unknown
+    );
+    assert_eq!(channel.0.fill_calls, 1);
+    assert_eq!(channel.0.send_calls, 0);
+
+    channel.0.live.draft = Draft::Text(action.text.clone());
+    assert_eq!(
+        runtime
+            .recover_filled_send(&action_id, 2, &mut channel)
+            .unwrap(),
+        ActionState::VerifiedOutgoing
+    );
+    assert_eq!(channel.0.fill_calls, 1);
+    assert_eq!(channel.0.send_calls, 1);
+    assert!(
+        runtime
+            .recover_filled_send(&action_id, 3, &mut channel)
+            .is_err()
+    );
+}
+
+#[test]
+fn filled_recovery_rejects_other_unknown_reasons_wrong_draft_and_expiry() {
+    let (_dir, mut runtime, binding) = setup();
+    let action_id = prepared(&mut runtime, &binding.key);
+    let (action, _) = runtime.action(&action_id).unwrap();
+    let mut no_effect = MockChannel::new(&binding.key);
+    no_effect.fault = Fault::FillNoEffect;
+    assert_eq!(
+        runtime.dispatch(&action_id, 1, &mut no_effect).unwrap(),
+        ActionState::Unknown
+    );
+    no_effect.live.draft = Draft::Text(action.text.clone());
+    assert!(
+        runtime
+            .recover_filled_send(&action_id, 2, &mut no_effect)
+            .is_err()
+    );
+    assert_eq!(no_effect.send_calls, 0);
+
+    let (_dir, mut runtime, binding) = setup();
+    let action_id = prepared(&mut runtime, &binding.key);
+    let (action, _) = runtime.action(&action_id).unwrap();
+    let mut fill_error = FillErrorChannel(MockChannel::new(&binding.key));
+    runtime.dispatch(&action_id, 1, &mut fill_error).unwrap();
+    fill_error.0.live.draft = Draft::Text("different draft".into());
+    assert!(
+        runtime
+            .recover_filled_send(&action_id, 2, &mut fill_error)
+            .is_err()
+    );
+    fill_error.0.live.draft = Draft::Text(action.text);
+    assert!(
+        runtime
+            .recover_filled_send(&action_id, 1_800_002, &mut fill_error)
+            .is_err()
+    );
+    assert_eq!(fill_error.0.send_calls, 0);
+}
+
 #[test]
 fn unsuccessful_readback_and_layout_race_never_send() {
     for fault in [

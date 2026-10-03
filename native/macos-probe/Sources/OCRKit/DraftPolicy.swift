@@ -67,8 +67,20 @@ public enum WeChatDraftPolicy {
         return normalizeVerificationText(joined)
     }
 
+    public static func verifiedText(_ expected: String, snapshot: OCRSnapshot) -> String? {
+        guard let observed = observedText(snapshot) else { return nil }
+        let canonical = normalizeVerificationText(expected)
+        if observed == canonical { return canonical }
+
+        // In a real all-CJK draft Apple Vision can classify the insertion caret as a
+        // trailing ASCII "1". Keep this expected-aware and deliberately narrow: never
+        // normalize a digit globally or for mixed/ASCII replies.
+        let allNonASCII = !canonical.isEmpty && !canonical.contains("\n")
+            && canonical.unicodeScalars.allSatisfy { $0.value > 0x7F }
+        return allNonASCII && observed == canonical + "1" ? canonical : nil
+    }
+
     public static func verified(_ expected: String, snapshot: OCRSnapshot) -> Bool {
-        guard let observed = observedText(snapshot) else { return false }
-        return observed == normalizeVerificationText(expected)
+        verifiedText(expected, snapshot: snapshot) != nil
     }
 }

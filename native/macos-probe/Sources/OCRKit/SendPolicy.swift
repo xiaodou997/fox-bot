@@ -44,6 +44,16 @@ public struct SendObservation: Codable, Equatable {
             && windowRef == other.windowRef && layoutRef == other.layoutRef
             && conversationResolved && other.conversationResolved
     }
+
+    public func withDraftText(_ text: String) -> SendObservation {
+        SendObservation(
+            applicationSession: applicationSession, conversation: conversation,
+            windowRef: windowRef, layoutRef: layoutRef, frontmost: frontmost,
+            conversationResolved: conversationResolved, draftState: .nonempty,
+            draftText: text, messages: messages, sendButton: sendButton,
+            evidenceRevision: evidenceRevision
+        )
+    }
 }
 
 /// Plaintext is available only to the host's explicitly requested private read command.

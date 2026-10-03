@@ -139,12 +139,17 @@ struct SendMain {
                     reply.status = VisionOCR.warmup().succeeded ? "WARMED" : "WARMUP_FAILED"
                 } else if ["inspect", "read"].contains(request.command) {
                     let (raw, snapshot) = try await capture()
-                    reply.observation = snapshot
+                    if let filledText,
+                       let canonical = WeChatDraftPolicy.verifiedText(filledText, snapshot: raw.draftSnapshot) {
+                        reply.observation = snapshot.withDraftText(canonical)
+                    } else {
+                        reply.observation = snapshot
+                    }
                     if request.command == "read" {
                         reply.messages = WeChatSendPolicy.readMessages(raw.chatSnapshot)
                     }
                     reply.status = "OBSERVED"
-                } else if ["fill", "send", "reconcile"].contains(request.command) {
+                } else if ["fill", "send", "recover_send", "reconcile"].contains(request.command) {
                     guard let expected = request.expected, let text = request.text,
                           let action = request.actionId, !action.isEmpty, action.utf8.count <= 128,
                           WeChatSendPolicy.supportedText(text) else { throw Failure.invalidRequest }
@@ -171,20 +176,31 @@ struct SendMain {
                         try checkOwner()
                         try input(text)
                         try await Task.sleep(nanoseconds: 600_000_000)
-                        let (_, after) = try await capture()
-                        reply.observation = after
-                        guard expected.sameSurface(as: after), expected.sameMessages(as: after)
+                        let (afterRaw, observedAfter) = try await capture()
+                        guard expected.sameSurface(as: observedAfter), expected.sameMessages(as: observedAfter)
                         else { throw Failure.targetChanged }
-                        guard after.draftText == text else { throw Failure.draftMismatch }
+                        guard let verified = WeChatDraftPolicy.verifiedText(text, snapshot: afterRaw.draftSnapshot)
+                        else { throw Failure.draftMismatch }
+                        let after = observedAfter.withDraftText(verified)
+                        reply.observation = after
                         filledAction = action
                         filledText = text
                         reply.status = "FILLED"
                     } else {
-                        guard allowWrite, filledAction == action, filledText == text else { throw Failure.invalidRequest }
+                        guard allowWrite else { throw Failure.invalidRequest }
+                        if request.command == "send" {
+                            guard filledAction == action, filledText == text else { throw Failure.invalidRequest }
+                        } else {
+                            guard request.command == "recover_send", filledAction == nil, filledText == nil
+                            else { throw Failure.invalidRequest }
+                        }
                         guard !sendUsed else { throw Failure.actionAlreadyAttempted }
                         guard expected.sameMessages(as: current) else { throw Failure.targetChanged }
-                        guard current.draftText == text else { throw Failure.draftMismatch }
-                        guard let button = current.sendButton else { throw Failure.sendButtonUnavailable }
+                        guard let verified = WeChatDraftPolicy.verifiedText(text, snapshot: raw.draftSnapshot)
+                        else { throw Failure.draftMismatch }
+                        let before = current.withDraftText(verified)
+                        reply.observation = before
+                        guard let button = before.sendButton else { throw Failure.sendButtonUnavailable }
                         try checkOwner()
                         sendUsed = true
                         reply.sendAttempted = true
@@ -195,7 +211,7 @@ struct SendMain {
                             try await Task.sleep(nanoseconds: 500_000_000)
                             let (_, after) = try await capture()
                             reply.observation = after
-                            if WeChatSendPolicy.verifiedOutgoing(before: current, after: after, text: text) {
+                            if WeChatSendPolicy.verifiedOutgoing(before: before, after: after, text: text) {
                                 reply.verifiedOutgoing = true
                                 reply.status = "VERIFIED_OUTGOING"
                                 break
