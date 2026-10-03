@@ -260,9 +260,21 @@ known_gaps:
 | arm / once | REAL PASS（单条私聊） | 不回填历史，仅处理一个新增 incoming；新版普通 SQLite 与先落盘的 generation claim，旧加密目录不转换 |
 | HTTP 回复与发送 | REAL PASS（单条短回复） | 真实 Chat Completions 请求 1 次；原生填入、单次发送并观察到匹配己方消息；不代表送达/已读 |
 | 填入不确定恢复 | REAL PASS（受限） | 仅 `UNKNOWN/fill_uncertain`、无 send receipt、原草稿精确对应、上下文稳定时发送既有草稿；不重新生成或 fill |
-| 重放与拒绝分支 | REAL PASS（同 RUN） | 完成后重放模型、read、inspect、fill、send 均为 0；超长/多行仍不写入、不截断 |
+| 重放与拒绝分支 | REAL PASS（同 RUN） | 完成后重放模型、read、inspect、fill、send 均为 0；不支持的正文仍不写入、不截断 |
 
 详细步骤见[G3c-2 联调说明](../development/G3C2_REAL_REPLY.md)。[真实 AI 回复收口回执](../acceptance/receipts/2026-10-03-g3c2-real-ai-reply.md)记录一次真实模型请求、VERIFIED_OUTGOING、同 RUN 零重放和 184/61/118 回归。该 PASS 仅覆盖已绑定测试私聊的一条短单行回复，不自动提升为持续值守、多会话或其它适配器支持。
+
+### G3c-3 多行与较长纯文本回复
+
+| 对象 | 当前状态 | 边界 |
+| --- | --- | --- |
+| 正文范围 | IMPLEMENTED / OFFLINE PASS | 最多 512 UTF-16、12 行纯文本；LF 可用，CR/Tab/其它控制字符拒绝，不截断 |
+| 原生写入 | IMPLEMENTED / OFFLINE PASS | 短单行沿用 Unicode；扩展正文通过有界剪贴板快照、粘贴、完整复制回读并恢复原剪贴板 |
+| 上下文门禁 | IMPLEMENTED / OFFLINE PASS | 输入区变高只允许顶部历史被遮住；底部新增/删改/乱序均阻断 |
+| C08 回执 V4 | IMPLEMENTED / OFFLINE PASS | exact + continuity + content digest；content 仅处理视觉换行，非空白字符必须一致；V3 保留精确兼容 |
+| 真机多行 AI 回复 | NOT_RUN | 必须使用新 RUN、新 incoming 验证一次真实模型、一次 fill/send、VERIFIED_OUTGOING 与零重放 |
+
+实现和验收步骤见[G3c-3 说明](../development/G3C3_MULTILINE_REPLY.md)。在真机回执产生前，不把离线剪贴板、合成 worker 或此前短回复 PASS 外推为真实多行支持。
 
 ### 多接口与本地设置（2026-10-03）
 

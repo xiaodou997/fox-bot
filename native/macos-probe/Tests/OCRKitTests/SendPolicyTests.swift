@@ -5,7 +5,8 @@ import XCTest
 final class SendPolicyTests: XCTestCase {
     private func message(_ text: String, me: Bool = false, complete: Bool = true) -> SendMessageSignature {
         SendMessageSignature(digest: WeChatSendPolicy.digest(text), direction: me ? "ME" : "THEM", complete: complete,
-                             continuityDigest: WeChatSendPolicy.digest(WeChatSendPolicy.continuityText(text)))
+                             continuityDigest: WeChatSendPolicy.digest(WeChatSendPolicy.continuityText(text)),
+                             contentDigest: WeChatSendPolicy.digest(WeChatSendPolicy.contentText(text)))
     }
     private func snapshot(_ messages: [SendMessageSignature], draft: DraftReadState = .emptyHeuristic,
                           conversation: String = "chat") -> SendObservation {
@@ -35,6 +36,15 @@ final class SendPolicyTests: XCTestCase {
         XCTAssertFalse(before.sameMessages(as: snapshot(Array(before.messages.reversed()))))
     }
 
+    func testComposerGrowthMayDropOnlyLeadingHistory() {
+        let before = snapshot([message("a"), message("b"), message("c")])
+        XCTAssertTrue(snapshot([message("b"), message("c")]).hasNoNewMessages(since: before))
+        XCTAssertFalse(snapshot([message("b"), message("c"), message("new")]).hasNoNewMessages(since: before))
+        XCTAssertFalse(snapshot([message("a"), message("c")]).hasNoNewMessages(since: before))
+        let repeated = snapshot([message("x"), message("x"), message("x")])
+        XCTAssertFalse(snapshot([message("x"), message("x")]).hasNoNewMessages(since: repeated))
+    }
+
     func testNewMatchingOutgoingIsObservedNotDelivered() {
         let before = snapshot([message("a"), message("b")])
         let after = snapshot(before.messages + [message("reply", me: true)])
@@ -52,6 +62,11 @@ final class SendPolicyTests: XCTestCase {
     func testScrolledSuffixWithTwoAnchorsIsAccepted() {
         let before = snapshot([message("a"), message("b"), message("c")])
         let after = snapshot([message("b"), message("c"), message("reply", me: true)])
+        XCTAssertTrue(WeChatSendPolicy.verifiedOutgoing(before: before, after: after, text: "reply"))
+    }
+    func testComposerShrinkMayRevealOlderHistoryBeforeTheMatchedContext() {
+        let before = snapshot([message("b"), message("c")])
+        let after = snapshot([message("a"), message("b"), message("c"), message("reply", me: true)])
         XCTAssertTrue(WeChatSendPolicy.verifiedOutgoing(before: before, after: after, text: "reply"))
     }
     func testAbsentOverlapOrWrongDirectionNeverVerifies() {
@@ -134,23 +149,43 @@ final class SendPolicyTests: XCTestCase {
         XCTAssertEqual(WeChatSendPolicy.receiptSignatures(ocr([line], complete: false)),
                        [message("synthetic reply", me: true, complete: false)])
     }
-    func testLegacyAndUnknownEvidenceRevisionsCannotVerifyNewObservations() {
-        let current = snapshot([message("a"), message("b")])
-        let after = snapshot(current.messages + [message("reply", me: true)])
-        let revisions: [String?] = [nil, "FUTURE_REVISION"]
-        for revision in revisions {
-            var before = current
+    func testLegacyV3CanVerifyExactTextButUnknownRevisionsCannot() {
+        var before = snapshot([message("a"), message("b")])
+        var after = snapshot(before.messages + [message("reply", me: true)])
+        before.evidenceRevision = WeChatSendPolicy.legacyEvidenceRevision
+        after.evidenceRevision = WeChatSendPolicy.evidenceRevision
+        XCTAssertTrue(WeChatSendPolicy.verifiedOutgoing(before: before, after: after, text: "reply"))
+        for revision in [nil, "FUTURE_REVISION"] as [String?] {
             before.evidenceRevision = revision
             XCTAssertFalse(WeChatSendPolicy.verifiedOutgoing(before: before, after: after, text: "reply"))
         }
     }
 
-    func testTextBoundsRejectControlKeysBeforeWriting() {
-        for text in ["", " hello", "hello\nworld", "\t", "hello\0", String(repeating: "a", count: 81), "x|"] {
+    func testTextBoundsAllowBoundedMultilineAndRejectUnsafeControls() {
+        for text in ["", " hello", "\t", "hello\0", "hello\rworld",
+                     String(repeating: "a", count: WeChatSendPolicy.maxTextUTF16 + 1),
+                     Array(repeating: "x", count: WeChatSendPolicy.maxTextLines + 1).joined(separator: "\n"), "x|"] {
             XCTAssertFalse(WeChatSendPolicy.supportedText(text))
         }
         XCTAssertTrue(WeChatSendPolicy.supportedText("FoxBot G3c1 742961"))
-        XCTAssertTrue(WeChatSendPolicy.supportedText("测试回复 742961"))
+        XCTAssertTrue(WeChatSendPolicy.supportedText("第一段\n第二段\n\n第四段"))
+        XCTAssertTrue(WeChatSendPolicy.supportedText(String(repeating: "长", count: 300)))
+        XCTAssertFalse(WeChatSendPolicy.usesPasteboardInput("短回复"))
+        XCTAssertTrue(WeChatSendPolicy.usesPasteboardInput("第一行\n第二行"))
+        XCTAssertTrue(WeChatSendPolicy.usesPasteboardInput(String(repeating: "长", count: 81)))
+    }
+
+    func testWrappedMultilineOutgoingUsesContentDigestWithoutChangingCharacters() {
+        let expected = "南京有深厚的历史文化底蕴。\n这里也有活跃的创新产业。"
+        let wrapped = "南京有深厚的历史\n文化底蕴。\n这里也有活跃的\n创新产业。"
+        let before = snapshot([message("anchor-a"), message("anchor-b", me: true)])
+        let after = snapshot(before.messages + [message(wrapped, me: true)])
+        XCTAssertTrue(WeChatSendPolicy.verifiedOutgoing(before: before, after: after, text: expected))
+        XCTAssertFalse(WeChatSendPolicy.verifiedOutgoing(
+            before: before,
+            after: after,
+            text: expected.replacingOccurrences(of: "创新", with: "创业")
+        ))
     }
     func testSendButtonRequiresUniqueLabelWithinControlArea() {
         func ocr(_ lines: [OCRLine]) -> OCRSnapshot {

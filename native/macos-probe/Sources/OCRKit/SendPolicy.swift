@@ -12,6 +12,7 @@ public struct SendMessageSignature: Codable, Equatable {
     public let direction: String
     public let complete: Bool
     public let continuityDigest: String?
+    public let contentDigest: String?
 
     public func sameContext(as other: SendMessageSignature) -> Bool {
         continuityDigest != nil && continuityDigest == other.continuityDigest
@@ -39,6 +40,19 @@ public struct SendObservation: Codable, Equatable {
             && zip(messages, other.messages).allSatisfy { $0.sameContext(as: $1) }
     }
 
+    /// A larger composer can hide older rows at the top without changing the chat.
+    /// Only that leading-drop shape is accepted; a new bottom message never is.
+    public func hasNoNewMessages(since before: SendObservation) -> Bool {
+        if sameMessages(as: before) { return true }
+        guard messages.count >= 2, messages.count < before.messages.count else { return false }
+        let anchors = before.messages.suffix(messages.count)
+        guard zip(anchors, messages).allSatisfy({ $0.sameContext(as: $1) }),
+              let first = anchors.first,
+              anchors.dropFirst().contains(where: { !first.sameContext(as: $0) })
+        else { return false }
+        return true
+    }
+
     public func sameSurface(as other: SendObservation) -> Bool {
         applicationSession == other.applicationSession && conversation == other.conversation
             && windowRef == other.windowRef && layoutRef == other.layoutRef
@@ -64,8 +78,12 @@ public struct NativeReadMessage: Encodable {
 }
 
 public enum WeChatSendPolicy {
-    public static let evidenceRevision = "WECHAT_RECEIPT_V3"
+    public static let legacyEvidenceRevision = "WECHAT_RECEIPT_V3"
+    public static let evidenceRevision = "WECHAT_RECEIPT_V4"
     public static let controlRegion = CGRect(x: 0.86, y: 0.80, width: 0.14, height: 0.20)
+    public static let shortUnicodeLimit = 80
+    public static let maxTextUTF16 = 512
+    public static let maxTextLines = 12
 
     public static func digest(_ value: String) -> String {
         SHA256.hash(data: Data(value.utf8))
@@ -84,12 +102,29 @@ public enum WeChatSendPolicy {
             with: "", options: .regularExpression)
     }
 
-    /// G3c-1 deliberately supports short, single-line plain text only. Reject before input.
+    /// Receipt-only content projection. Exact draft verification happens before send;
+    /// this removes visual-wrap whitespace without changing any non-whitespace scalar.
+    public static func contentText(_ text: String) -> String {
+        String(text.unicodeScalars.filter {
+            !CharacterSet.whitespacesAndNewlines.contains($0)
+        })
+    }
+
+    /// Bounded plain text only. LF is allowed; tabs, CR and all other control characters
+    /// remain rejected before any native write.
     public static func supportedText(_ text: String) -> Bool {
-        !text.isEmpty && text.utf16.count <= 80
+        !text.isEmpty && text.utf16.count <= maxTextUTF16
+            && text.split(separator: "\n", omittingEmptySubsequences: false).count <= maxTextLines
             && text == text.trimmingCharacters(in: .whitespacesAndNewlines)
-            && !text.unicodeScalars.contains { CharacterSet.controlCharacters.contains($0) }
+            && !text.contains("\r")
+            && !text.unicodeScalars.contains {
+                CharacterSet.controlCharacters.contains($0) && $0.value != 10
+            }
             && !text.hasSuffix("|")
+    }
+
+    public static func usesPasteboardInput(_ text: String) -> Bool {
+        text.contains("\n") || text.utf16.count > shortUnicodeLimit
     }
 
     public static func sendButton(_ snapshot: OCRSnapshot?) -> SendPoint? {
@@ -137,7 +172,8 @@ public enum WeChatSendPolicy {
         parsedMessages(snapshot).map {
             SendMessageSignature(digest: digest($0.text), direction: $0.direction.rawValue,
                                  complete: snapshot.statistics.completeRecognition && $0.direction != .unknown,
-                                 continuityDigest: digest(continuityText($0.text)))
+                                 continuityDigest: digest(continuityText($0.text)),
+                                 contentDigest: digest(contentText($0.text)))
         }
     }
 
@@ -160,27 +196,52 @@ public enum WeChatSendPolicy {
         )
     }
 
-    /// A new matching ME message after an unambiguous suffix/prefix overlap, not a delivery ACK.
+    /// A new matching ME message after an unambiguous context overlap, not a delivery ACK.
     public static func verifiedOutgoing(before: SendObservation, after: SendObservation, text: String) -> Bool {
-        guard before.evidenceRevision == evidenceRevision, after.evidenceRevision == evidenceRevision,
+        let supportedRevisions = [legacyEvidenceRevision, evidenceRevision]
+        guard before.evidenceRevision.map(supportedRevisions.contains) == true,
+              after.evidenceRevision.map(supportedRevisions.contains) == true,
               before.sameSurface(as: after), after.frontmost,
               after.draftState == .emptyHeuristic,
               before.messages.allSatisfy(\.complete), after.messages.allSatisfy(\.complete)
         else { return false }
         let expected = digest(text)
+        let expectedContent = digest(contentText(text))
+        let allowContentProjection = usesPasteboardInput(text)
+        let matches = { (message: SendMessageSignature) in
+            message.direction == "ME"
+                && (message.digest == expected
+                    || (allowContentProjection && message.contentDigest == expectedContent))
+        }
         if before.messages.isEmpty {
-            return after.messages.count == 1 && after.messages[0].direction == "ME"
-                && after.messages[0].digest == expected
+            return after.messages.count == 1 && matches(after.messages[0])
         }
-        let upper = min(before.messages.count, after.messages.count)
-        let lower = min(2, before.messages.count)
-        guard upper >= lower else { return false }
-        let overlaps = (lower...upper).filter { count in
-            zip(before.messages.suffix(count), after.messages.prefix(count))
-                .allSatisfy { $0.sameContext(as: $1) }
+
+        var candidates: [(start: Int, count: Int)] = []
+        for start in after.messages.indices {
+            let upper = min(before.messages.count, after.messages.count - start)
+            guard upper >= 2 else { continue }
+            for count in stride(from: upper, through: 2, by: -1) {
+                let matched = zip(before.messages.suffix(count),
+                                  after.messages[start..<(start + count)])
+                    .allSatisfy { $0.sameContext(as: $1) }
+                if matched {
+                    candidates.append((start, count))
+                    break
+                }
+            }
         }
-        guard overlaps.count == 1, let overlap = overlaps.first else { return false }
-        let added = after.messages.dropFirst(overlap)
-        return added.filter { $0.direction == "ME" && $0.digest == expected }.count == 1
+        let valid = candidates.filter { after.messages.count - ($0.start + $0.count) == 1 }
+        let ends = Set(valid.map { $0.start + $0.count })
+        guard ends.count == 1, let end = ends.first else { return false }
+        let aligned = valid.filter { $0.start + $0.count == end }
+        if aligned.count > 1, let longest = aligned.max(by: { $0.count < $1.count }) {
+            let anchors = before.messages.suffix(longest.count)
+            guard let first = anchors.first,
+                  anchors.dropFirst().contains(where: { !first.sameContext(as: $0) })
+            else { return false }
+        }
+        let added = after.messages.dropFirst(end)
+        return added.filter(matches).count == 1
     }
 }

@@ -17,6 +17,6 @@
 <div class="actions"><button id="save" type="submit" class="primary">保存接口</button><button id="test" type="button">测试连接</button><span class="field-note">保存不需要联网</span></div>
 <div class="secondary-actions"><button id="set-default" type="button" disabled>设为默认</button><button id="duplicate" type="button" disabled>复制接口</button><button id="delete" type="button" class="danger" disabled>删除</button></div>
 </form></section></div>
-<section class="reply-settings"><div><p class="eyebrow">REPLY PREFERENCES</p><h2>回复提示词</h2><p class="muted">用于普通模型。自定义业务接口继续使用服务自身的规则，不会额外加入这段提示词。</p></div><textarea id="system-prompt" rows="3" maxlength="8000" aria-label="回复提示词"></textarea><div class="actions"><button id="save-prompt" type="button">保存提示词</button><span class="field-note">当前联调支持短单行回复；长文、多行尚未开放。</span></div></section>
+<section class="reply-settings"><div><p class="eyebrow">REPLY PREFERENCES</p><h2>回复提示词</h2><p class="muted">用于普通模型。自定义业务接口继续使用服务自身的规则，不会额外加入这段提示词。</p></div><textarea id="system-prompt" rows="3" maxlength="8000" aria-label="回复提示词"></textarea><div class="actions"><button id="save-prompt" type="button">保存提示词</button><span class="field-note">当前支持最多 12 行、512 个 UTF-16 单元的纯文本回复；超出范围不会截断发送。</span></div></section>
 <footer><div><span class="dot" aria-hidden="true"></span>仅本机设置页面 · 不会读取聊天或启动自动回复<p id="config-path"></p></div><button id="shutdown" type="button">关闭设置服务</button></footer>
 </main></body></html>

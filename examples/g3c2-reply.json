@@ -19,7 +19,7 @@
   "ledger_key": {"id": "foxbot-g3c2-ledger"},
   "provider": {
     "kind": "generic",
-    "system_prompt": "这是自动回复联调。请根据最后一条用户消息，以一句简短中文回答，不换行，不超过50个字。"
+    "system_prompt": "这是自动回复联调。请根据最后一条用户消息清晰、简洁地回答；需要时可分段或换行，回复控制在300个汉字以内。"
   },
   "wait_ms": 60000,
   "poll_ms": 1000

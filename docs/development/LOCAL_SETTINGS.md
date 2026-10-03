@@ -73,7 +73,7 @@ target/debug/foxbot-host g3c-reply-once "$CONFIG" \
   --allow-network --allow-single-test-send
 ```
 
-这个版本仍是短单行、80 UTF-16 单元的受限单次联调；不是持续服务。超长/多行不截断后发送。实际 AI 与微信完整端到端验收仍需真实接口和新的测试消息，本地 HTTP fixture 不能代替这项。
+当前原生写入范围是最多 12 行、512 个 UTF-16 单元的纯文本；超过范围、含 CR/Tab/其它控制字符时不截断发送。短单行直接注入 Unicode，多行或较长正文使用有界剪贴板保全与完整复制回读。该能力仍是单次联调，不是持续服务；真实多行 AI 回复仍需新的测试消息完成真机验收，本地 HTTP fixture 不能代替。
 
 ## 6. 历史兼容与回归
 

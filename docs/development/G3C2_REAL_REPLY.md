@@ -27,7 +27,7 @@ arm 是测试入口的“开始接收新消息”，不是逐条人工批准，�
 
 `foxbot-macos-send` 增加只读 `read` 命令。一次截图中的正文、方向和完整性与回执签名来自同一解析投影；宿主复核原文 digest、上下文 digest 和方向，拒绝不对应的数据。原文仅通过该私有命令传给宿主；inspect、报告、公开日志仍只输出状态和计数。输入区、时间分隔的排除沿用 G3c-1 修复。
 
-IPC 更新为 `foxbot.native-send-worker.v4`，**读取/回执解析规则仍为 WECHAT_RECEIPT_V3**，没有仅因增加命令就重写历史回执。需要一起构建 Rust host 和 Swift worker。G3c-1 的固定文本入口继续保留。
+G3c-2 收口时 IPC 为 `foxbot.native-send-worker.v4` / `WECHAT_RECEIPT_V3`。后续 G3c-3 已升级至 v5 / V4 以支持多行视觉回执；旧 V3 仍按原精确规则兼容，不重写历史 receipt。当前实现见[G3c-3 说明](G3C3_MULTILINE_REPLY.md)。
 
 模型调用之前将 generation claim 持久化；中断后不会自动再调用一次模型。HTTP 本增量仅允许 max_attempts=1 / max_in_flight=1。收到模型结果后重新读取，若会话、窗口、上下文变化或读取失败，拒绝写入。dispatch 还被固定到生成该回复时的消息上下文，避免把第一次“模型后读取”误当成新的无条件基线。
 
@@ -35,9 +35,9 @@ IPC 更新为 `foxbot.native-send-worker.v4`，**读取/回执解析规则仍为
 
 ## 3. 支持范围
 
-**本次先接已有可靠写入器，正文仍限短单行、最多 80 UTF-16 单元。** 普通中文可以通过；长文、多行、复杂表情没有借这次“接模型”自动取得支持。超出范围返回 UNSUPPORTED_REPLY_NO_WRITE，已生成的完整回复保留在 Runtime 中，输入区写入/发送均为 0，不截断后发送。
+G3c-2 的真实 PASS 只覆盖短单行、最多 80 UTF-16 单元；这个历史验收边界保持不变。当前代码已经由 G3c-3 扩展到有界多行/较长纯文本，但必须以独立真机回执取得新的 ACCEPTED 范围。
 
-模板的短回答 system_prompt 只属于普通模型的联调示例，不会强加给已配置的业务服务；模型不遵循字数或单行要求时也不能擅自缩短内容。正常长文本/多行支持作为后续独立增量。
+模板 system_prompt 只属于普通模型，不会强加给已配置的业务服务；模型回复也不能为了适配写入器而被擅自截断。G3c-3 的新默认提示词允许需要时分段，但已保存的旧提示词不会自动覆盖。
 
 模型可以返回 no_reply/handoff，不会创建发送动作。无效 JSON、截断响应、超时、目标或上下文变化不会变成“发送成功”。VERIFIED_OUTGOING 表示观察到新的匹配己方消息，不表示平台送达或已读。
 
@@ -131,4 +131,4 @@ target/debug/foxbot-host g3c-reply-recover-filled "$CONFIG" \
 
 旧 v1 联调状态位于 `target/g2d-real/<SESSION>/g3c-2/<RUN>/`，仍使用 SQLCipher。当前 v2 本地配置把任务保存到配置同级的 `runs/<SESSION>/<RUN>/`，上下文和完整 AI 回复使用普通 SQLite，无需账本密钥。run.json 保存选定接口 ID、配置摘要、绑定、历史签名和阶段，不保存聊天原文和 API Key；不同存储模式不隐式转换已有任务。公开报告只包含状态、model job 次数和 native 调用计数；BusinessV1 的反馈请求次数不混作模型生成次数。
 
-验收分别记录：离线真实 HTTP 协议＋合成 worker、真实微信只读检查、真实模型＋真实发送。当前第三项已在一条短单行回复上通过。下一步扩展多行/长文本，随后进入当前私聊持续值守；不扩展 IME 或人工共编专项。
+验收分别记录：离线真实 HTTP 协议＋合成 worker、真实微信只读检查、真实模型＋真实发送。第三项已在一条短单行回复上通过；多行/较长正文的当前实现与待验收项见[G3c-3](G3C3_MULTILINE_REPLY.md)。通过后进入当前私聊持续值守；不扩展 IME 或人工共编专项。

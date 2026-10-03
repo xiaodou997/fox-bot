@@ -19,7 +19,7 @@ fn client_context() -> ContextMode {
     ContextMode::ClientManaged
 }
 fn default_prompt() -> String {
-    "请根据最后一条用户消息简短回答，使用单行，不超过50个字。".into()
+    "请根据最后一条用户消息清晰、简洁地回答；需要时可分段或换行，回复控制在300个汉字以内。".into()
 }
 
 #[derive(Clone, Serialize, Deserialize)]

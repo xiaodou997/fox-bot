@@ -2,7 +2,7 @@
 
 面向微信、QQ、飞书和 X 私信的跨平台消息自动化客户端。
 
-**当前状态：已有多 AI 接口设置页；API Key 直接保存在本地配置，正常任务使用普通 SQLite，不再要求钥匙串或账本密钥初始化。** G3c-2 已在一个已绑定微信测试私聊完成“一条真实新消息 → 真实 AI 回复 → 原生发送 → 自动确认”，同 RUN 重放没有再次请求模型或发送；这仍不是持续 AUTO_REPLY、多会话或正式发布。设置页是本机浏览器入口，完整桌面应用和 APK 尚未完成。当前使用方式见[本地设置说明](docs/development/LOCAL_SETTINGS.md)，真实联调证据见[G3c-2 收口回执](docs/acceptance/receipts/2026-10-03-g3c2-real-ai-reply.md)。
+**当前状态：已有多 AI 接口设置页；API Key 直接保存在本地配置，正常任务使用普通 SQLite，不再要求钥匙串或账本密钥初始化。** G3c-2 已在一个已绑定微信测试私聊完成“一条真实新消息 → 真实 AI 回复 → 原生发送 → 自动确认”；G3c-3 已实现最多 12 行、512 个 UTF-16 单元的纯文本回填与回执，真机多行验收待执行。这仍不是持续 AUTO_REPLY、多会话或正式发布。设置页是本机浏览器入口，完整桌面应用和 APK 尚未完成。当前使用方式见[本地设置说明](docs/development/LOCAL_SETTINGS.md)，多行实现见[G3c-3 说明](docs/development/G3C3_MULTILINE_REPLY.md)。
 
 ## 配置 AI 接口
 

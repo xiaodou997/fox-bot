@@ -20,7 +20,12 @@ use std::{
     time::Duration,
 };
 
-const RECEIPT_REVISION: &str = "WECHAT_RECEIPT_V3";
+const LEGACY_RECEIPT_REVISION: &str = "WECHAT_RECEIPT_V3";
+const RECEIPT_REVISION: &str = "WECHAT_RECEIPT_V4";
+const WORKER_SCHEMA: &str = "foxbot.native-send-worker.v5";
+const SHORT_UNICODE_LIMIT: usize = 80;
+pub(crate) const MAX_SEND_UTF16: usize = 512;
+pub(crate) const MAX_SEND_LINES: usize = 12;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -36,6 +41,8 @@ pub struct MessageSignature {
     pub complete: bool,
     #[serde(default)]
     pub continuity_digest: Option<String>,
+    #[serde(default)]
+    pub content_digest: Option<String>,
 }
 impl MessageSignature {
     pub(crate) fn same_context(&self, other: &Self) -> bool {
@@ -79,18 +86,23 @@ impl NativeSendObservation {
                     .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
                 && value.bytes().any(|b| b != b'0')
         }
-        if self.evidence_revision.as_deref() != Some(RECEIPT_REVISION)
+        let revision = self.evidence_revision.as_deref();
+        let revision_valid = matches!(revision, Some(LEGACY_RECEIPT_REVISION | RECEIPT_REVISION));
+        let messages_valid = self.messages.iter().all(|message| {
+            hash(&message.digest)
+                && message.continuity_digest.as_deref().is_some_and(hash)
+                && message.content_digest.as_deref().is_none_or(hash)
+                && (revision != Some(RECEIPT_REVISION) || message.content_digest.is_some())
+                && matches!(message.direction.as_str(), "ME" | "THEM" | "UNKNOWN")
+        });
+        if !revision_valid
             || !hash(&self.application_session)
             || !hash(&self.conversation)
             || !hash(&self.layout_ref)
             || self.window_ref.is_empty()
             || self.window_ref.len() > 128
             || self.messages.len() > 64
-            || self.messages.iter().any(|m| {
-                !hash(&m.digest)
-                    || !m.continuity_digest.as_deref().is_some_and(hash)
-                    || !matches!(m.direction.as_str(), "ME" | "THEM" | "UNKNOWN")
-            })
+            || !messages_valid
             || !matches!(
                 self.draft_state.as_str(),
                 "EMPTY_HEURISTIC" | "NONEMPTY" | "UNREADABLE"
@@ -106,6 +118,26 @@ impl NativeSendObservation {
             return Err(HostError::Untrusted);
         }
         Ok(())
+    }
+
+    pub(crate) fn has_no_new_messages_since(&self, before: &Self) -> bool {
+        if self.same_messages(before) {
+            return true;
+        }
+        if self.messages.len() < 2 || self.messages.len() >= before.messages.len() {
+            return false;
+        }
+        let anchors = &before.messages[before.messages.len() - self.messages.len()..];
+        anchors
+            .iter()
+            .zip(&self.messages)
+            .all(|(left, right)| left.same_context(right))
+            && anchors.first().is_some_and(|first| {
+                anchors
+                    .iter()
+                    .skip(1)
+                    .any(|message| !first.same_context(message))
+            })
     }
     fn matches_binding(&self, binding: &NativeConversationBinding) -> bool {
         self.conversation_resolved
@@ -251,9 +283,9 @@ impl Worker {
             .map_err(|_| HostError::NativeWorker)?;
         let reply: WorkerReply =
             serde_json::from_slice(&data).map_err(|_| HostError::NativeWorker)?;
-        if reply.schema_version != "foxbot.native-send-worker.v4"
+        if reply.schema_version != WORKER_SCHEMA
             || reply.id != id
-            || (command != "read" && reply.messages.is_some())
+            || (!matches!(command, "read" | "recover_read") && reply.messages.is_some())
             || (command != "fill" && reply.write_attempted)
             || (!matches!(command, "send" | "recover_send") && reply.send_attempted)
             || (reply.verified_outgoing
@@ -301,6 +333,11 @@ fn read_frame(reply: WorkerReply) -> Result<NativeReadFrame> {
                     "{:x}",
                     Sha256::digest(crate::native_bridge::continuity_text(&m.text).as_bytes())
                 )) != s.continuity_digest
+                || (observation.evidence_revision.as_deref() == Some(RECEIPT_REVISION)
+                    && Some(format!(
+                        "{:x}",
+                        Sha256::digest(content_text(&m.text).as_bytes())
+                    )) != s.content_digest)
         })
     {
         return Err(HostError::Untrusted);
@@ -311,26 +348,27 @@ fn read_frame(reply: WorkerReply) -> Result<NativeReadFrame> {
     })
 }
 
-fn verified_draft_text(observed: Option<&str>, expected: &str) -> bool {
-    let Some(observed) = observed else {
-        return false;
-    };
-    if observed == expected {
-        return true;
-    }
-    !expected.is_empty()
-        && !expected.contains('\n')
-        && expected.chars().all(|value| !value.is_ascii())
-        && observed.len() == expected.len() + 1
-        && observed.strip_suffix('1') == Some(expected)
+fn content_text(value: &str) -> String {
+    value
+        .chars()
+        .filter(|character| !character.is_whitespace())
+        .collect()
 }
 
-fn supported_recovery_text(value: &str) -> bool {
+pub(crate) fn supported_send_text(value: &str) -> bool {
     !value.is_empty()
-        && value.encode_utf16().count() <= 80
+        && value.encode_utf16().count() <= MAX_SEND_UTF16
+        && value.split('\n').count() <= MAX_SEND_LINES
         && value.trim() == value
-        && !value.chars().any(char::is_control)
+        && !value.contains('\r')
+        && !value
+            .chars()
+            .any(|character| character.is_control() && character != '\n')
         && !value.ends_with('|')
+}
+
+fn uses_content_projection(value: &str) -> bool {
+    value.contains('\n') || value.encode_utf16().count() > SHORT_UNICODE_LIMIT
 }
 
 /// Read two stable current frames before an operator-confirmed application-session rebind.
@@ -375,7 +413,7 @@ pub struct NativeSendChannel<'a> {
     last: Option<NativeSendObservation>,
     baseline: Option<NativeSendObservation>,
     receipt_path: PathBuf,
-    recovery_text: Option<String>,
+    recovery_action: Option<OutboundAction>,
     pub stats: NativeSendStats,
 }
 impl<'a> NativeSendChannel<'a> {
@@ -394,7 +432,7 @@ impl<'a> NativeSendChannel<'a> {
             last: None,
             baseline: None,
             receipt_path,
-            recovery_text: None,
+            recovery_action: None,
             stats: NativeSendStats::default(),
         })
     }
@@ -404,40 +442,35 @@ impl<'a> NativeSendChannel<'a> {
         binding: NativeConversationBinding,
         owner: &'a DeviceOwner,
         receipt_path: PathBuf,
-        text: &str,
+        action: &OutboundAction,
     ) -> Result<Self> {
-        if !supported_recovery_text(text) {
+        if !supported_send_text(&action.text) || action.target != binding.binding.key {
             return Err(HostError::Config);
         }
         let mut channel = Self::start(binary, binding, owner, receipt_path, true)?;
-        channel.recovery_text = Some(text.to_owned());
+        channel.recovery_action = Some(action.clone());
         Ok(channel)
     }
 
-    fn canonicalize_recovery_draft(
-        &self,
-        mut observation: NativeSendObservation,
-    ) -> Result<NativeSendObservation> {
-        if let Some(expected) = &self.recovery_text {
-            if observation.draft_state != "NONEMPTY"
-                || !verified_draft_text(observation.draft_text.as_deref(), expected)
-            {
-                return Err(HostError::Untrusted);
-            }
-            observation.draft_text = Some(expected.clone());
-        }
-        Ok(observation)
+    fn recovery_frame(&mut self) -> Result<NativeReadFrame> {
+        let action = self.recovery_action.as_ref().ok_or(HostError::Config)?;
+        let reply = self.worker.request("recover_read", None, Some(action))?;
+        self.stats.last_status = reply.status.clone();
+        read_frame(reply)
     }
     pub fn observe(&mut self) -> Result<NativeSendObservation> {
         self.owner.verify()?;
         self.stats.inspect_requests += 1;
-        let reply = self.worker.request("inspect", None, None)?;
-        self.stats.last_status = reply.status.clone();
-        if reply.status != "OBSERVED" {
-            return Err(HostError::Untrusted);
-        }
-        let observation =
-            self.canonicalize_recovery_draft(reply.observation.ok_or(HostError::Untrusted)?)?;
+        let observation = if self.recovery_action.is_some() {
+            self.recovery_frame()?.observation
+        } else {
+            let reply = self.worker.request("inspect", None, None)?;
+            self.stats.last_status = reply.status.clone();
+            if reply.status != "OBSERVED" {
+                return Err(HostError::Untrusted);
+            }
+            reply.observation.ok_or(HostError::Untrusted)?
+        };
         if !observation.matches_binding(&self.binding) {
             self.stats.last_status = if observation.application_session
                 != self.binding.application_session_fingerprint
@@ -454,10 +487,13 @@ impl<'a> NativeSendChannel<'a> {
     pub(crate) fn read_messages(&mut self) -> Result<NativeReadFrame> {
         self.owner.verify()?;
         self.stats.read_requests += 1;
-        let reply = self.worker.request("read", None, None)?;
-        self.stats.last_status = reply.status.clone();
-        let mut frame = read_frame(reply)?;
-        frame.observation = self.canonicalize_recovery_draft(frame.observation)?;
+        let frame = if self.recovery_action.is_some() {
+            self.recovery_frame()?
+        } else {
+            let reply = self.worker.request("read", None, None)?;
+            self.stats.last_status = reply.status.clone();
+            read_frame(reply)?
+        };
         if !frame.observation.matches_binding(&self.binding) {
             return Err(HostError::Untrusted);
         }
@@ -489,10 +525,10 @@ impl<'a> NativeSendChannel<'a> {
             editor_ref: format!("{}:composer-v1", observation.layout_ref),
             layout_revision: 1,
             draft,
-            conversation_changed: self
-                .baseline
-                .as_ref()
-                .is_some_and(|b| !b.same_surface(observation) || !b.same_messages(observation)),
+            conversation_changed: self.baseline.as_ref().is_some_and(|baseline| {
+                !baseline.same_surface(observation)
+                    || !observation.has_no_new_messages_since(baseline)
+            }),
             permitted: observation.matches_binding(&self.binding),
             frontmost: observation.frontmost,
         }
@@ -515,8 +551,10 @@ fn matching_outgoing(
     after: &NativeSendObservation,
     text: &str,
 ) -> bool {
-    if before.evidence_revision.as_deref() != Some(RECEIPT_REVISION)
-        || after.evidence_revision.as_deref() != Some(RECEIPT_REVISION)
+    let revision_supported =
+        |value: Option<&str>| matches!(value, Some(LEGACY_RECEIPT_REVISION | RECEIPT_REVISION));
+    if !revision_supported(before.evidence_revision.as_deref())
+        || !revision_supported(after.evidence_revision.as_deref())
         || !before.same_surface(after)
         || !after.frontmost
         || after.draft_state != "EMPTY_HEURISTIC"
@@ -524,31 +562,67 @@ fn matching_outgoing(
             .messages
             .iter()
             .chain(&after.messages)
-            .any(|m| !m.complete)
+            .any(|message| !message.complete)
     {
         return false;
     }
     let digest = format!("{:x}", Sha256::digest(text.as_bytes()));
-    let matched = |m: &MessageSignature| m.direction == "ME" && m.digest == digest;
+    let content_digest = format!("{:x}", Sha256::digest(content_text(text).as_bytes()));
+    let content_projection = uses_content_projection(text);
+    let matched = |message: &MessageSignature| {
+        message.direction == "ME"
+            && (message.digest == digest
+                || (content_projection
+                    && message.content_digest.as_deref() == Some(content_digest.as_str())))
+    };
     if before.messages.is_empty() {
         return after.messages.len() == 1 && matched(&after.messages[0]);
     }
-    let lower = 2.min(before.messages.len());
-    let upper = before.messages.len().min(after.messages.len());
-    let overlaps: Vec<_> = (lower..=upper)
-        .filter(|&n| {
-            before.messages[before.messages.len() - n..]
+
+    let mut valid: Vec<(usize, usize)> = Vec::new();
+    for start in 0..after.messages.len() {
+        let upper = before.messages.len().min(after.messages.len() - start);
+        if upper < 2 {
+            continue;
+        }
+        for count in (2..=upper).rev() {
+            let same = before.messages[before.messages.len() - count..]
                 .iter()
-                .zip(&after.messages[..n])
-                .all(|(a, b)| a.same_context(b))
-        })
-        .collect();
-    overlaps.len() == 1
-        && after.messages[overlaps[0]..]
+                .zip(&after.messages[start..start + count])
+                .all(|(left, right)| left.same_context(right));
+            if same {
+                if after.messages.len() - (start + count) == 1 {
+                    valid.push((start, count));
+                }
+                break;
+            }
+        }
+    }
+    let Some(end) = valid.first().map(|(start, count)| start + count) else {
+        return false;
+    };
+    if valid.iter().any(|(start, count)| start + count != end) {
+        return false;
+    }
+    if valid.len() > 1 {
+        let longest = valid.iter().map(|(_, count)| *count).max().unwrap_or(0);
+        let anchors = &before.messages[before.messages.len() - longest..];
+        let Some(first) = anchors.first() else {
+            return false;
+        };
+        if !anchors
             .iter()
-            .filter(|m| matched(m))
-            .count()
-            == 1
+            .skip(1)
+            .any(|message| !first.same_context(message))
+        {
+            return false;
+        }
+    }
+    after.messages[end..]
+        .iter()
+        .filter(|message| matched(message))
+        .count()
+        == 1
 }
 
 fn channel_error(_: HostError) -> foxbot_core::Error {
@@ -584,6 +658,7 @@ impl MessageChannel for NativeSendChannel<'_> {
             .observation
             .ok_or(foxbot_core::Error::Blocked("native readback missing"))?;
         if !before.same_surface(&after)
+            || !after.has_no_new_messages_since(&before)
             || self.live(&after).draft != Draft::Text(action.text.clone())
         {
             return Err(foxbot_core::Error::Blocked("native readback mismatch"));
@@ -613,7 +688,7 @@ impl MessageChannel for NativeSendChannel<'_> {
         .map_err(channel_error)?;
         self.owner.verify().map_err(channel_error)?;
         self.stats.send_requests += 1;
-        let command = if self.recovery_text.is_some() {
+        let command = if self.recovery_action.is_some() {
             "recover_send"
         } else {
             "send"

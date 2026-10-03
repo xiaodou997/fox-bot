@@ -133,11 +133,18 @@ class WindowOCRSchemaTests(unittest.TestCase):
 
     def test_capture_sources_have_no_write_upload_or_display_fallback(self):
         root = Path(__file__).resolve().parents[2] / "native/macos-probe/Sources"
-        text = "\n".join(path.read_text() for name in ("OCRKit", "OCRCLI") for path in (root / name).rglob("*.swift"))
+        capture_files = [
+            path for name in ("OCRKit", "OCRCLI") for path in (root / name).rglob("*.swift")
+            if path.name != "PasteboardSnapshot.swift"
+        ]
+        text = "\n".join(path.read_text() for path in capture_files)
         for forbidden in ("AXUIElementPerformAction", "AXUIElementSetAttributeValue", "CGEventPost", "NSPasteboard",
                           "URLSession", "CGRequestScreenCaptureAccess", "CGWindowListCreateImage", "SCStream(",
                           "SCContentFilter(display:", "captureImage(in:", "CGImageDestination", "write(to:"):
             self.assertNotIn(forbidden, text)
+        clipboard = (root / "OCRKit" / "PasteboardSnapshot.swift").read_text()
+        self.assertIn("NSPasteboard", clipboard)
+        self.assertNotIn("CGEvent", clipboard)
         self.assertIn("SCContentFilter(desktopIndependentWindow:", text)
         self.assertIn("config.includeChildWindows = false", text)
         self.assertIn("NSApplication.shared", text)

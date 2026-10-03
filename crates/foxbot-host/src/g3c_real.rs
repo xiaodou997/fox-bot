@@ -133,6 +133,7 @@ fn verified_signatures(snapshot: &PrivateMessageSnapshot) -> Result<Vec<MessageS
                     "{:x}",
                     Sha256::digest(crate::native_bridge::continuity_text(&message.text).as_bytes())
                 )),
+                content_digest: None,
                 direction: direction.into(),
                 complete: true,
             })
@@ -162,6 +163,7 @@ fn valid_rebind_messages(messages: &[MessageSignature]) -> bool {
         && messages.iter().all(|message| {
             hash64(&message.digest)
                 && message.continuity_digest.as_deref().is_some_and(hash64)
+                && message.content_digest.as_deref().is_none_or(hash64)
                 && message.complete
                 && matches!(message.direction.as_str(), "ME" | "THEM")
         })
@@ -564,6 +566,7 @@ mod tests {
             MessageSignature {
                 digest: "e".repeat(64),
                 continuity_digest: Some("e".repeat(64)),
+                content_digest: None,
                 direction: "THEM".into(),
                 complete: true,
             };

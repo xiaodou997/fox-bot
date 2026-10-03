@@ -15,7 +15,7 @@ fn binding() -> NativeConversationBinding {
         binding,
     }
 }
-fn prepared(runtime: &mut Runtime, binding: &NativeConversationBinding) -> String {
+fn prepared_text(runtime: &mut Runtime, binding: &NativeConversationBinding, text: &str) -> String {
     runtime.bind(&binding.binding).unwrap();
     runtime
         .ingest(&fixture_observation(
@@ -32,16 +32,15 @@ fn prepared(runtime: &mut Runtime, binding: &NativeConversationBinding) -> Strin
     runtime
         .accept_reply(
             &request.request_id,
-            &ReplyResponse::for_request(
-                &request,
-                ReplyOutcome::Reply {
-                    text: "FoxBot G3c1 test".into(),
-                },
-            ),
+            &ReplyResponse::for_request(&request, ReplyOutcome::Reply { text: text.into() }),
             1,
         )
         .unwrap();
     runtime.prepare_send(&request.request_id, 1, false).unwrap()
+}
+
+fn prepared(runtime: &mut Runtime, binding: &NativeConversationBinding) -> String {
+    prepared_text(runtime, binding, "FoxBot G3c1 test")
 }
 
 // Separate process with the real worker protocol; no desktop, network, or Keychain access.
@@ -53,20 +52,21 @@ import sys, json, hashlib, pathlib, time
 root = pathlib.Path(__file__).parent
 marker = root / 'sent.json'
 allow = '--allow-single-send' in sys.argv
-draft = 'FoxBot G3c1 test' if MODE == 'prefilled' else ''
+draft = 'FoxBot G3c1 test' if MODE == 'prefilled' else ((root/'prefilled.txt').read_text() if MODE == 'prefilled-file' else '')
 def sig(text, direction):
-    return {'digest': hashlib.sha256(text.encode()).hexdigest(), 'continuity_digest': hashlib.sha256(text.encode()).hexdigest(), 'direction': direction, 'complete': True}
+    content = ''.join(text.split())
+    return {'digest': hashlib.sha256(text.encode()).hexdigest(), 'continuity_digest': hashlib.sha256(text.encode()).hexdigest(), 'content_digest': hashlib.sha256(content.encode()).hexdigest(), 'direction': direction, 'complete': True}
 def observe():
     messages = [sig('anchor-a', 'THEM'), sig('anchor-b', 'ME')]
     if marker.exists():
         messages.append(sig(json.loads(marker.read_text())['text'], 'ME'))
     return {'application_session': 'c'*64, 'conversation': 'a'*64, 'window_ref': '1', 'layout_ref': 'd'*64,
             'frontmost': True, 'conversation_resolved': True, 'draft_state': 'NONEMPTY' if draft else 'EMPTY_HEURISTIC',
-            'draft_text': draft, 'messages': messages, 'send_button': {'x': .94, 'y': .94}, 'evidence_revision': 'WECHAT_RECEIPT_V3'}
+            'draft_text': draft, 'messages': messages, 'send_button': {'x': .94, 'y': .94}, 'evidence_revision': 'WECHAT_RECEIPT_V4'}
 for line in sys.stdin:
     req = json.loads(line)
     cmd = req['command']
-    result = {'schema_version': 'foxbot.native-send-worker.v4', 'id': req['id'], 'status': 'OBSERVED',
+    result = {'schema_version': 'foxbot.native-send-worker.v5', 'id': req['id'], 'status': 'OBSERVED',
               'write_attempted': False, 'send_attempted': False, 'verified_outgoing': False}
     if MODE == 'bad-id':
         result['id'] += 1
@@ -90,7 +90,7 @@ for line in sys.stdin:
             assert not allow, 'reconciliation must not carry write capability'
             result.update(status='VERIFIED_OUTGOING', verified_outgoing=True)
         result['observation'] = observe()
-        if cmd == 'read':
+        if cmd in ('read', 'recover_read'):
             result['messages'] = [
                 {'text': 'anchor-a', 'direction': 'THEM', 'complete': True},
                 {'text': 'anchor-b', 'direction': 'ME', 'complete': True},
@@ -298,6 +298,11 @@ fn unknown_observation_revision_is_rejected() {
         .observation
         .unwrap();
     assert!(observation.validate().is_ok());
+    observation.evidence_revision = Some(LEGACY_RECEIPT_REVISION.into());
+    for message in &mut observation.messages {
+        message.content_digest = None;
+    }
+    assert!(observation.validate().is_ok());
     observation.evidence_revision = Some("FUTURE_REVISION".into());
     assert!(observation.validate().is_err());
     observation.evidence_revision = None;
@@ -324,12 +329,89 @@ fn context_signature_can_ignore_spacing_without_relaxing_exact_outgoing_digest()
         direction: "ME".into(),
         complete: true,
         continuity_digest: Some(digest),
+        content_digest: Some(format!(
+            "{:x}",
+            Sha256::digest(content_text(text).as_bytes())
+        )),
     });
     assert!(!before.same_messages(&after));
     assert!(matching_outgoing(&before, &after, text));
     assert!(!matching_outgoing(&before, &after, "回复42"));
     after.messages[0].continuity_digest = Some("f".repeat(64));
     assert!(!matching_outgoing(&before, &after, text));
+}
+
+#[test]
+fn long_multiline_receipt_handles_visual_wrap_and_revealed_older_history() {
+    fn signature(text: &str, direction: &str) -> MessageSignature {
+        MessageSignature {
+            digest: format!("{:x}", Sha256::digest(text.as_bytes())),
+            direction: direction.into(),
+            complete: true,
+            continuity_digest: Some(format!(
+                "{:x}",
+                Sha256::digest(crate::native_bridge::continuity_text(text).as_bytes())
+            )),
+            content_digest: Some(format!(
+                "{:x}",
+                Sha256::digest(content_text(text).as_bytes())
+            )),
+        }
+    }
+    let expected = "南京有深厚的历史文化底蕴。\n这里也有活跃的创新产业。";
+    let wrapped = "南京有深厚的历史\n文化底蕴。\n这里也有活跃的\n创新产业。";
+    let mut before = NativeSendObservation {
+        application_session: "c".repeat(64),
+        conversation: "a".repeat(64),
+        window_ref: "1".into(),
+        layout_ref: "d".repeat(64),
+        frontmost: true,
+        conversation_resolved: true,
+        draft_state: "NONEMPTY".into(),
+        draft_text: Some(expected.into()),
+        messages: vec![signature("anchor-b", "THEM"), signature("anchor-c", "ME")],
+        send_button: None,
+        evidence_revision: Some(RECEIPT_REVISION.into()),
+    };
+    let mut after = before.clone();
+    after.draft_state = "EMPTY_HEURISTIC".into();
+    after.draft_text = Some(String::new());
+    after.messages = vec![
+        signature("older-a", "THEM"),
+        signature("anchor-b", "THEM"),
+        signature("anchor-c", "ME"),
+        signature(wrapped, "ME"),
+    ];
+    assert!(matching_outgoing(&before, &after, expected));
+    assert!(!matching_outgoing(
+        &before,
+        &after,
+        &expected.replace("创新", "创业")
+    ));
+    before.evidence_revision = Some(LEGACY_RECEIPT_REVISION.into());
+    assert!(matching_outgoing(&before, &after, expected));
+}
+
+#[test]
+fn composer_growth_can_only_drop_leading_history() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut worker =
+        Worker::start(&worker(dir.path(), "ok"), false, Duration::from_secs(20)).unwrap();
+    let mut before = worker
+        .request("inspect", None, None)
+        .unwrap()
+        .observation
+        .unwrap();
+    before.messages.push(before.messages[0].clone());
+    let mut after = before.clone();
+    after.messages.remove(0);
+    assert!(after.has_no_new_messages_since(&before));
+    after.messages.push(before.messages[0].clone());
+    assert!(!after.has_no_new_messages_since(&before));
+    let repeated = before.messages[0].clone();
+    before.messages = vec![repeated.clone(), repeated.clone(), repeated.clone()];
+    after.messages = vec![repeated.clone(), repeated];
+    assert!(!after.has_no_new_messages_since(&before));
 }
 
 #[test]
@@ -363,7 +445,7 @@ fn filled_recovery_sends_the_existing_draft_without_a_fill_call() {
         entry,
         &owner,
         dir.path().join("receipt.json"),
-        &action.text,
+        &action,
     )
     .unwrap();
     let live = channel.inspect(&action.target).unwrap();
@@ -378,17 +460,43 @@ fn filled_recovery_sends_the_existing_draft_without_a_fill_call() {
 }
 
 #[test]
-fn recovery_draft_caret_one_is_narrow_and_expected_aware() {
-    assert!(verified_draft_text(
-        Some("南京是一座历史文化名城1"),
-        "南京是一座历史文化名城"
+fn filled_recovery_supports_exact_multiline_without_refilling() {
+    let dir = tempfile::tempdir().unwrap();
+    let owner = DeviceOwner::acquire_at(&dir.path().join("device")).unwrap();
+    let entry = binding();
+    let text = "第一段：这是已存在的完整草稿。\n第二段：恢复时不能重新填入或重新生成。";
+    fs::write(dir.path().join("prefilled.txt"), text).unwrap();
+    let mut runtime = Runtime::open_simulation(dir.path().join("runtime")).unwrap();
+    let action_id = prepared_text(&mut runtime, &entry, text);
+    let (action, _) = runtime.action(&action_id).unwrap();
+    let mut channel = NativeSendChannel::start_filled_recovery(
+        &worker(dir.path(), "prefilled-file"),
+        entry,
+        &owner,
+        dir.path().join("receipt.json"),
+        &action,
+    )
+    .unwrap();
+    let live = channel.inspect(&action.target).unwrap();
+    assert_eq!(live.draft, Draft::Text(text.into()));
+    assert!(matches!(
+        channel.send(&action, &live).unwrap(),
+        SendEvidence::ObservedOutgoing { .. }
     ));
-    assert!(!verified_draft_text(
-        Some("南京是一座历史文化古城1"),
-        "南京是一座历史文化名城"
+    assert_eq!(channel.stats.fill_requests, 0);
+    assert_eq!(channel.stats.send_requests, 1);
+}
+
+#[test]
+fn send_text_policy_allows_bounded_multiline_and_rejects_unsafe_controls() {
+    assert!(supported_send_text("第一行\n第二行"));
+    assert!(supported_send_text(&"长".repeat(300)));
+    assert!(!supported_send_text(&"x".repeat(MAX_SEND_UTF16 + 1)));
+    assert!(!supported_send_text(
+        &vec!["x"; MAX_SEND_LINES + 1].join("\n")
     ));
-    assert!(!verified_draft_text(Some("reply1"), "reply"));
-    assert!(verified_draft_text(Some("版本1"), "版本1"));
+    assert!(!supported_send_text("line1\tline2"));
+    assert!(!supported_send_text("line1\r\nline2"));
 }
 
 #[test]

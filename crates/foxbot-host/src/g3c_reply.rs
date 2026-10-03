@@ -8,8 +8,8 @@ use crate::{
     g3c_real,
     native_bridge::NativeConversationBinding,
     native_send::{
-        NativeReadFrame, NativeReadMessage, NativeSendChannel, NativeSendObservation,
-        NativeSendStats,
+        MAX_SEND_UTF16, NativeReadFrame, NativeReadMessage, NativeSendChannel,
+        NativeSendObservation, NativeSendStats, supported_send_text,
     },
     ownership::{DeviceOwner, private_directory},
 };
@@ -301,12 +301,8 @@ fn observation(
     }
 }
 fn supported_reply(text: &str) -> bool {
-    // Matches the G3c-1 native writer. Reject before ANY GUI write; never truncate a model reply.
-    !text.is_empty()
-        && text.encode_utf16().count() <= 80
-        && text.trim() == text
-        && !text.chars().any(char::is_control)
-        && !text.ends_with('|')
+    // Reject before ANY GUI write; never truncate or rewrite a model reply.
+    supported_send_text(text)
 }
 fn report(
     state: &RunState,
@@ -395,6 +391,7 @@ pub fn arm(
     binding.binding.quiet_ms = 0;
     binding.binding.max_wait_ms = 0;
     binding.binding.max_auto_sends = 1;
+    binding.binding.max_reply_chars = MAX_SEND_UTF16;
     binding.binding.reply_ttl_ms = config.http.total_timeout_ms.saturating_add(60_000);
     binding.binding.validate()?;
     let service = config.service(&NativeCredentials)?;
@@ -539,7 +536,7 @@ pub fn recover_filled(
         state.binding.clone(),
         &owner,
         directory.join("receipt.json"),
-        &action.text,
+        &action,
     )?;
     let first = channel.read_messages()?;
     let second = channel.read_messages()?;

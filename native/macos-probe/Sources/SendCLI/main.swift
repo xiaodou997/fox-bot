@@ -13,7 +13,7 @@ private struct Request: Decodable {
 }
 
 private struct Reply: Encodable {
-    let schemaVersion = "foxbot.native-send-worker.v4"
+    let schemaVersion = "foxbot.native-send-worker.v5"
     let id: UInt64
     var status: String
     var observation: SendObservation?
@@ -90,6 +90,90 @@ private func input(_ text: String) throws {
     }
 }
 
+private func commandKey(_ key: CGKeyCode) throws {
+    guard let down = CGEvent(keyboardEventSource: nil, virtualKey: key, keyDown: true),
+          let up = CGEvent(keyboardEventSource: nil, virtualKey: key, keyDown: false)
+    else { throw Failure.inputFailed }
+    down.flags = .maskCommand
+    up.flags = .maskCommand
+    down.post(tap: .cghidEventTap)
+    up.post(tap: .cghidEventTap)
+}
+
+private func canonicalLineEndings(_ text: String) -> String {
+    text.replacingOccurrences(of: "\r\n", with: "\n")
+        .replacingOccurrences(of: "\r", with: "\n")
+}
+
+private func composerPoint(_ raw: WeChatComposerObservation) -> CGPoint {
+    CGPoint(
+        x: raw.window.frame.minX + raw.window.frame.width * WeChatDraftPolicy.focusPoint.x,
+        y: raw.window.frame.minY + raw.window.frame.height * WeChatDraftPolicy.focusPoint.y
+    )
+}
+
+private func copyFocusedDraft(_ raw: WeChatComposerObservation,
+                              pasteboard: NSPasteboard) async throws -> String {
+    guard frontmost() else { throw Failure.appNotFrontmost }
+    try click(composerPoint(raw))
+    try await Task.sleep(nanoseconds: 100_000_000)
+    pasteboard.clearContents()
+    let cleared = pasteboard.changeCount
+    try commandKey(0) // A
+    try await Task.sleep(nanoseconds: 50_000_000)
+    try commandKey(8) // C
+    try await Task.sleep(nanoseconds: 200_000_000)
+    guard frontmost(), pasteboard.changeCount != cleared,
+          let value = pasteboard.string(forType: .string)
+    else { throw Failure.inputFailed }
+    return canonicalLineEndings(value)
+}
+
+private func readBackExtendedDraft(_ raw: WeChatComposerObservation) async throws -> String {
+    let pasteboard = NSPasteboard.general
+    guard let snapshot = PasteboardSnapshot(pasteboard: pasteboard) else {
+        throw Failure.inputFailed
+    }
+    var restored = false
+    defer {
+        if !restored { _ = snapshot.restore(to: pasteboard) }
+    }
+    let value = try await copyFocusedDraft(raw, pasteboard: pasteboard)
+    guard snapshot.restore(to: pasteboard) else { throw Failure.inputFailed }
+    restored = true
+    return value
+}
+
+private func pasteExtendedText(_ text: String,
+                               raw: WeChatComposerObservation) async throws {
+    let pasteboard = NSPasteboard.general
+    guard let snapshot = PasteboardSnapshot(pasteboard: pasteboard) else {
+        throw Failure.inputFailed
+    }
+    var restored = false
+    defer {
+        if !restored { _ = snapshot.restore(to: pasteboard) }
+    }
+    pasteboard.clearContents()
+    guard pasteboard.setString(text, forType: .string) else { throw Failure.inputFailed }
+    guard frontmost() else { throw Failure.appNotFrontmost }
+    try click(composerPoint(raw))
+    try await Task.sleep(nanoseconds: 100_000_000)
+    try commandKey(9) // V
+    try await Task.sleep(nanoseconds: 500_000_000)
+    guard snapshot.restore(to: pasteboard) else { throw Failure.inputFailed }
+    restored = true
+}
+
+private func verifiedDraft(_ expected: String,
+                           raw: WeChatComposerObservation) async throws -> String? {
+    if WeChatSendPolicy.usesPasteboardInput(expected) {
+        let copied = try await readBackExtendedDraft(raw)
+        return copied == canonicalLineEndings(expected) ? expected : nil
+    }
+    return WeChatDraftPolicy.verifiedText(expected, snapshot: raw.draftSnapshot)
+}
+
 @main
 struct SendMain {
     static func main() async {
@@ -140,7 +224,7 @@ struct SendMain {
                 } else if ["inspect", "read"].contains(request.command) {
                     let (raw, snapshot) = try await capture()
                     if let filledText,
-                       let canonical = WeChatDraftPolicy.verifiedText(filledText, snapshot: raw.draftSnapshot) {
+                       let canonical = try await verifiedDraft(filledText, raw: raw) {
                         reply.observation = snapshot.withDraftText(canonical)
                     } else {
                         reply.observation = snapshot
@@ -149,6 +233,16 @@ struct SendMain {
                         reply.messages = WeChatSendPolicy.readMessages(raw.chatSnapshot)
                     }
                     reply.status = "OBSERVED"
+                } else if request.command == "recover_read" {
+                    guard allowWrite, let text = request.text,
+                          let action = request.actionId, !action.isEmpty, action.utf8.count <= 128,
+                          WeChatSendPolicy.supportedText(text) else { throw Failure.invalidRequest }
+                    let (raw, snapshot) = try await capture()
+                    guard let canonical = try await verifiedDraft(text, raw: raw)
+                    else { throw Failure.draftMismatch }
+                    reply.observation = snapshot.withDraftText(canonical)
+                    reply.messages = WeChatSendPolicy.readMessages(raw.chatSnapshot)
+                    reply.status = "OBSERVED"
                 } else if ["fill", "send", "recover_send", "reconcile"].contains(request.command) {
                     guard let expected = request.expected, let text = request.text,
                           let action = request.actionId, !action.isEmpty, action.utf8.count <= 128,
@@ -156,8 +250,10 @@ struct SendMain {
                     let (raw, current) = try await capture()
                     reply.observation = current
                     guard expected.sameSurface(as: current) else { throw Failure.targetChanged }
-                    guard expected.evidenceRevision == WeChatSendPolicy.evidenceRevision,
-                          current.evidenceRevision == WeChatSendPolicy.evidenceRevision
+                    let supportedRevisions = [WeChatSendPolicy.legacyEvidenceRevision,
+                                              WeChatSendPolicy.evidenceRevision]
+                    guard expected.evidenceRevision.map(supportedRevisions.contains) == true,
+                          current.evidenceRevision.map(supportedRevisions.contains) == true
                     else { throw Failure.receiptRevisionMismatch }
                     if request.command == "reconcile" {
                         reply.verifiedOutgoing = WeChatSendPolicy.verifiedOutgoing(before: expected, after: current, text: text)
@@ -165,21 +261,25 @@ struct SendMain {
                     } else if request.command == "fill" {
                         guard allowWrite else { throw Failure.invalidRequest }
                         guard !fillUsed else { throw Failure.actionAlreadyAttempted }
-                        guard expected.sameMessages(as: current) else { throw Failure.targetChanged }
+                        guard current.hasNoNewMessages(since: expected) else { throw Failure.targetChanged }
                         guard current.draftState == .emptyHeuristic else { throw Failure.draftNotEmpty }
                         fillUsed = true
                         try checkOwner()
                         reply.writeAttempted = true
-                        try click(CGPoint(x: raw.window.frame.minX + raw.window.frame.width * WeChatDraftPolicy.focusPoint.x,
-                                          y: raw.window.frame.minY + raw.window.frame.height * WeChatDraftPolicy.focusPoint.y))
+                        try click(composerPoint(raw))
                         try await Task.sleep(nanoseconds: 150_000_000)
                         try checkOwner()
-                        try input(text)
-                        try await Task.sleep(nanoseconds: 600_000_000)
+                        if WeChatSendPolicy.usesPasteboardInput(text) {
+                            try await pasteExtendedText(text, raw: raw)
+                        } else {
+                            try input(text)
+                            try await Task.sleep(nanoseconds: 600_000_000)
+                        }
                         let (afterRaw, observedAfter) = try await capture()
-                        guard expected.sameSurface(as: observedAfter), expected.sameMessages(as: observedAfter)
+                        guard expected.sameSurface(as: observedAfter),
+                              observedAfter.hasNoNewMessages(since: expected)
                         else { throw Failure.targetChanged }
-                        guard let verified = WeChatDraftPolicy.verifiedText(text, snapshot: afterRaw.draftSnapshot)
+                        guard let verified = try await verifiedDraft(text, raw: afterRaw)
                         else { throw Failure.draftMismatch }
                         let after = observedAfter.withDraftText(verified)
                         reply.observation = after
@@ -195,8 +295,8 @@ struct SendMain {
                             else { throw Failure.invalidRequest }
                         }
                         guard !sendUsed else { throw Failure.actionAlreadyAttempted }
-                        guard expected.sameMessages(as: current) else { throw Failure.targetChanged }
-                        guard let verified = WeChatDraftPolicy.verifiedText(text, snapshot: raw.draftSnapshot)
+                        guard current.hasNoNewMessages(since: expected) else { throw Failure.targetChanged }
+                        guard let verified = try await verifiedDraft(text, raw: raw)
                         else { throw Failure.draftMismatch }
                         let before = current.withDraftText(verified)
                         reply.observation = before

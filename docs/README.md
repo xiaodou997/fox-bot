@@ -1,8 +1,8 @@
 # FoxBot 文档导航
 
-当前文档基线：**v0.1 / G3c-1 当前私聊单条原生发送 / 2026-10-01**。这是工程能力基线，不是应用发布版本。
+当前文档基线：**v0.1 / G3c-3 当前私聊多行与较长纯文本回复 / 2026-10-03**。这是工程能力基线，不是应用发布版本。
 
-macOS 微信 G2 真实读取链已完成 Freeze；G3a 已证明测试级草稿回填和 OCR 回读可行。用户已明确实际使用不会人工操作聊天软件，G3b 双门禁因此改为无人值守独占契约：不要求 IME、候选窗或最近键鼠活动证据，保留会话、内容、权限、执行权与防重复发送。IME Spike 归档。G3c-1 已实现独立的单条原生发送与新己方消息核对；固定测试回复的真实验收单独记录，完整 AUTO_REPLY 尚未接通。
+macOS 微信 G2 真实读取链已完成 Freeze；G3a/G3b 建立无人值守回填和发送门禁。G3c-1 完成固定短回复发送，G3c-2 完成一条真实 incoming → 真实 AI → 微信发送闭环。G3c-3 已实现多行/较长纯文本的剪贴板保全、完整复制回读和 V4 回执，真机多行验收仍待新的测试任务；持续 AUTO_REPLY 尚未接通。
 
 ## 1. 三份主文档
 
@@ -49,6 +49,7 @@ macOS 微信 G2 真实读取链已完成 Freeze；G3a 已证明测试级草稿�
 | [G3c-1 当前私聊单条真实发送](development/G3C1_SINGLE_REAL_SEND.md) | Runtime 加密待发任务、原生单次写入/点击、回执序列关联与只读重放核对 |
 | [G3c-1 收口回执](acceptance/receipts/2026-10-01-g3c1-closeout.md) | 新任务自动 VERIFIED_OUTGOING，同 RUN 重放零原生调用；Keychain 超时修复、152/61/116 回归 |
 | [G3c-2 真实消息与 AI 回复联调](development/G3C2_REAL_REPLY.md) | 单次 arm→新消息→HTTP模型→原生发送确认；配置、幂等与未实测范围 |
+| [G3c-3 多行与较长纯文本回复](development/G3C3_MULTILINE_REPLY.md) | 最多 12 行/512 UTF-16、剪贴板保全、完整复制回读、可视区变化与 V4 回执 |
 | [多接口与本地设置](development/LOCAL_SETTINGS.md) | 普通用户设置页、明文 API Key、SQLite、默认接口、连接测试与历史兼容 |
 | [本地设置验收](acceptance/receipts/2026-10-03-local-settings.md) | 固定提交 16/16 回归、实际设置 HTTP 服务、浏览器呈现与未联调边界 |
 | [G3c-2 联调准备回执](acceptance/receipts/2026-10-01-g3c2-real-reply-readiness.md) | 166/61/117 回归与真实私聊只读通过；实际模型和真实自动回复待配置 |
@@ -75,7 +76,7 @@ macOS 微信 G2 真实读取链已完成 Freeze；G3a 已证明测试级草稿�
 - `NOT_RUN / PASS / FAIL / BLOCKED / NA`：案例结果；NA 附理由，BLOCKED 不是 PASS。
 - `ACCEPTED`：某提交、设备/系统、应用版本、聊天类型、通道和模式已有通过回执。
 
-MC-WX 的 **G2 current-session 读取链**已有本机真实 PASS；G3a 已证明测试级 C06 fill，G3b 按独占运行修订。G3c-1 受限短文本 C07/C08 已取得真实闭环；G3c-2 又在同一测试私聊完成一条真实 incoming → 真实 AI → 微信发送与同 RUN 零重放。该 ACCEPTED 范围不外推到长文、多行、持续值守、多会话或其它适配器；Android 微信仍是 `PROBE_ONLY`。
+MC-WX 的 **G2 current-session 读取链**已有本机真实 PASS；G3c-1/G3c-2 已在同一测试私聊完成短回复真实闭环与同 RUN 零重放。G3c-3 多行/较长纯文本已实现并通过离线回归，但在新增真机回执之前仍为 IMPLEMENTED / NOT_RUN；持续值守、多会话和其它适配器不继承短回复 PASS，Android 微信仍是 `PROBE_ONLY`。
 
 ## 5. 文档变更规则
 
@@ -89,6 +90,6 @@ MC-WX 的 **G2 current-session 读取链**已有本机真实 PASS；G3a 已证�
 
 ## 6. 当前阶段和下一项
 
-**G3c-2 当前单条测试范围已收口**：新 incoming 只调用真实 ReplyProvider 一次，回填后的 OCR 光标误识别被窄规则识别，既有草稿在不重新生成、不重新填入的条件下发送并达到 VERIFIED_OUTGOING；同 RUN 重放模型、读取、回填和发送均为 0。多接口本地配置、普通 SQLite 和设置页继续作为默认路径。下一步扩展多行/较长回复，再进入当前私聊持续值守与连续消息调度；多会话另行推进，不新增 IME 或人工并发输入专项。
+**G3c-3 当前处于真机验收前**：短回复真实闭环保持收口；多行/较长回复已增加有界剪贴板保全、完整复制回读、输入区高度变化处理和 V4 内容回执，离线门禁通过。下一步用新的测试 incoming 完成一次真实多行回复与同 RUN 零重放；通过后进入当前私聊持续值守与连续消息调度。多会话另行推进，不新增 IME 或人工并发输入专项。
 
 目标应用版本与定制服务脱敏样例可在联调时补充，不阻塞模拟开发；未取得对应证据之前，不承诺真实客户端兼容性。根目录 scripts/check_docs.py 可直接检查本地 Markdown 文件目标、JSON 示例和案例引用，不联网检查外部链接。
