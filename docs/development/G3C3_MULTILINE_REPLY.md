@@ -2,7 +2,7 @@
 
 - 日期：2026-10-03
 - 基线：[G3c-2 真实 AI 回复](G3C2_REAL_REPLY.md)已在绑定测试私聊完成单条短回复闭环。
-- 当前状态：**IMPLEMENTED / OFFLINE PASS；真实微信多行回复验收待执行。** 固定提交和门禁见[实现回执](../acceptance/receipts/2026-10-03-g3c3-multiline-readiness.md)。
+- 当前状态：**较长回复 REAL PASS；显式 LF 多行仍 NOT_RUN。** 实现门禁见[准备回执](../acceptance/receipts/2026-10-03-g3c3-multiline-readiness.md)，真机结果见[较长回复回执](../acceptance/receipts/2026-10-03-g3c3-long-reply-real.md)。
 - 范围：macOS 微信、已绑定当前私聊、单条真实 incoming、单条纯文本回复。持续值守、多会话、附件和富文本不属于本增量。
 
 ## 1. 支持范围
@@ -59,25 +59,25 @@ OCR 只用于短回复和消息区证据；多行/长回复的输入框正文使
 原生 IPC 升级为：
 
 ```text
-foxbot.native-send-worker.v5
+foxbot.native-send-worker.v6
 WECHAT_RECEIPT_V4
 ```
 
-V4 在原始正文 digest 和 continuity digest 之外增加 `content_digest`。它只在多行/较长回复的**发送后视觉回执**中使用：移除布局产生的空白和换行，再比较所有非空白字符。发送前已经通过复制回读验证完整原文，因此这一投影只处理微信气泡自动换行，不能允许非空白字符变化。
+V4 在原始正文 digest 和 continuity digest 之外增加 `content_digest`。发送前仍通过复制回读精确验证完整原文。真实较长气泡会被微信拆成多个 OCR 片段并产生小量视觉误差，因此 v6 的后置回执只对扩展正文开放有界容错：最多合并 3 个尾部片段、首尾各 8 字符锚定、长度差和编辑距离均不超过 2；短回复仍为精确匹配。原始 OCR 正文仅在私有 worker IPC 中使用。
 
 历史 V3 回执继续解码和按原精确正文规则核对；不会补造 `content_digest`、重写旧 receipt 或把旧 UNKNOWN 提升为成功。未知 revision 仍然拒绝。
 
-## 5. `fill_uncertain` 恢复
+## 5. 发送前停止与草稿恢复
 
-既有受限恢复入口也支持本轮范围。它仍然要求：
+受限恢复入口支持两类可证明没有重复副作用的状态：`fill_uncertain`（尚未进入 send）以及原生报告明确 `send_attempted=false` 的发送前停止。它们都要求：
 
-- 同一个 action 处于 `UNKNOWN / fill_uncertain`；
-- 没有发送前 receipt，说明 send 尚未开始；
+- 同一个 action 处于 `UNKNOWN / fill_uncertain`，或有可信原生报告的 `UNKNOWN / effect_unconfirmed`；
+- `fill_uncertain` 没有发送前 receipt；或 receipt 与报告共同证明发送按钮不可用且没有发生点击；
 - action 未超过 30 分钟；
 - 当前账号、会话、窗口和唯一新增 incoming 与原任务一致；
 - 输入框完整正文复制回读后与账本回复精确一致。
 
-恢复只发送已经存在的草稿，不再次调用模型，也不再次 fill。一般 UNKNOWN、已有 receipt、正文不一致或上下文变化不能使用该入口。
+恢复只发送已经存在的草稿，不再次调用模型，也不再次 fill。一般 UNKNOWN、无法证明 `send_attempted=false`、正文不一致或上下文变化不能使用该入口。
 
 ## 6. 测试与验收
 
@@ -88,7 +88,7 @@ V4 在原始正文 digest 和 continuity digest 之外增加 `content_digest`。
 - 剪贴板文本和自定义类型完整恢复，超出快照预算时拒绝；
 - 输入区变高只允许顶部历史被遮住；
 - 发送后露出旧历史仍可关联唯一新增己方气泡；
-- 气泡视觉换行可用 V4 content digest，任一非空白字符变化不能通过；
+- 长气泡分片可在严格首尾锚点下容忍最多 2 个 OCR 编辑；短回复、上下文路由和发送前正文不放宽；
 - 多行既有草稿恢复不重新 fill；
 - V3 精确回执兼容，未知 revision 拒绝。
 
@@ -98,6 +98,6 @@ V4 在原始正文 digest 和 continuity digest 之外增加 `content_digest`。
 python3 scripts/g1_integration_check.py --with-macos-probe
 ```
 
-真实验收必须使用新的 RUN 和新的测试 incoming，验证真实模型产生两段或较长回复后：回填一次、发送一次、`VERIFIED_OUTGOING`，同 RUN 重放模型和原生调用均为 0。离线 worker、Swift 策略测试和此前短回复 PASS 都不能替代这次真机验收。
+真实 RUN `g3c3-multiline-20261003-145959` 已验证一条 139 UTF-16 的较长回复：真实模型 1 次、fill 1 次、物理发送 1 次、最终 `VERIFIED_OUTGOING`，同 RUN 重放模型和原生调用均为 0。模型输出没有显式 LF，因此真正多行消息仍需独立真机验收。
 
-真实验收通过后，下一阶段进入当前绑定私聊的持续值守：轮询新消息、逐条建立任务、处理等待/失败/暂停和连续消息，但不在本增量提前开放多会话自动导航。
+下一步先使用固定包含 LF 的回复补齐多行真机证据；通过后进入当前绑定私聊的持续值守：轮询新消息、逐条建立任务、处理等待/失败/暂停和连续消息，但不在本增量提前开放多会话自动导航。

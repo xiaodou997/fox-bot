@@ -2,7 +2,7 @@
 
 当前文档基线：**v0.1 / G3c-3 当前私聊多行与较长纯文本回复 / 2026-10-03**。这是工程能力基线，不是应用发布版本。
 
-macOS 微信 G2 真实读取链已完成 Freeze；G3a/G3b 建立无人值守回填和发送门禁。G3c-1 完成固定短回复发送，G3c-2 完成一条真实 incoming → 真实 AI → 微信发送闭环。G3c-3 已实现多行/较长纯文本的剪贴板保全、完整复制回读和 V4 回执，真机多行验收仍待新的测试任务；持续 AUTO_REPLY 尚未接通。
+macOS 微信 G2 真实读取链已完成 Freeze；G3a/G3b 建立无人值守回填和发送门禁。G3c-1 完成固定短回复发送，G3c-2 完成一条真实 incoming → 真实 AI → 微信发送闭环。G3c-3 已完成一条较长回复的真实闭环；显式 LF 多行仍待独立任务，持续 AUTO_REPLY 尚未接通。
 
 ## 1. 三份主文档
 
@@ -51,6 +51,7 @@ macOS 微信 G2 真实读取链已完成 Freeze；G3a/G3b 建立无人值守回�
 | [G3c-2 真实消息与 AI 回复联调](development/G3C2_REAL_REPLY.md) | 单次 arm→新消息→HTTP模型→原生发送确认；配置、幂等与未实测范围 |
 | [G3c-3 多行与较长纯文本回复](development/G3C3_MULTILINE_REPLY.md) | 最多 12 行/512 UTF-16、剪贴板保全、完整复制回读、可视区变化与 V4 回执 |
 | [G3c-3 实现回执](acceptance/receipts/2026-10-03-g3c3-multiline-readiness.md) | 固定提交 16/16 门禁通过，Rust 188 / Python 61 / Swift 123；真实微信多行 AI 回复仍 NOT_RUN |
+| [G3c-3 较长回复真机回执](acceptance/receipts/2026-10-03-g3c3-long-reply-real.md) | 139 UTF-16 真实 AI 回复、一次物理发送、VERIFIED_OUTGOING 与同 RUN 零重放；显式 LF 仍 NOT_RUN |
 | [多接口与本地设置](development/LOCAL_SETTINGS.md) | 普通用户设置页、明文 API Key、SQLite、默认接口、连接测试与历史兼容 |
 | [本地设置验收](acceptance/receipts/2026-10-03-local-settings.md) | 固定提交 16/16 回归、实际设置 HTTP 服务、浏览器呈现与未联调边界 |
 | [G3c-2 联调准备回执](acceptance/receipts/2026-10-01-g3c2-real-reply-readiness.md) | 166/61/117 回归与真实私聊只读通过；实际模型和真实自动回复待配置 |
@@ -77,7 +78,7 @@ macOS 微信 G2 真实读取链已完成 Freeze；G3a/G3b 建立无人值守回�
 - `NOT_RUN / PASS / FAIL / BLOCKED / NA`：案例结果；NA 附理由，BLOCKED 不是 PASS。
 - `ACCEPTED`：某提交、设备/系统、应用版本、聊天类型、通道和模式已有通过回执。
 
-MC-WX 的 **G2 current-session 读取链**已有本机真实 PASS；G3c-1/G3c-2 已在同一测试私聊完成短回复真实闭环与同 RUN 零重放。G3c-3 多行/较长纯文本已实现并通过离线回归，但在新增真机回执之前仍为 IMPLEMENTED / NOT_RUN；持续值守、多会话和其它适配器不继承短回复 PASS，Android 微信仍是 `PROBE_ONLY`。
+MC-WX 的 **G2 current-session 读取链**已有本机真实 PASS；G3c-1/G3c-2 已完成短回复真实闭环。G3c-3 又完成一条 139 UTF-16 较长回复的真实模型、真实发送、自动确认与同 RUN 零重放；显式 LF 多行、持续值守、多会话和其它适配器仍不继承该 PASS，Android 微信仍是 `PROBE_ONLY`。
 
 ## 5. 文档变更规则
 
@@ -91,6 +92,6 @@ MC-WX 的 **G2 current-session 读取链**已有本机真实 PASS；G3c-1/G3c-2 
 
 ## 6. 当前阶段和下一项
 
-**G3c-3 当前处于真机验收前**：短回复真实闭环保持收口；多行/较长回复已增加有界剪贴板保全、完整复制回读、输入区高度变化处理和 V4 内容回执，离线门禁通过。下一步用新的测试 incoming 完成一次真实多行回复与同 RUN 零重放；通过后进入当前私聊持续值守与连续消息调度。多会话另行推进，不新增 IME 或人工并发输入专项。
+**G3c-3 较长回复已真机通过**：一条 139 UTF-16 的真实 AI 回复完成剪贴板回填、一次物理发送、`VERIFIED_OUTGOING` 与同 RUN 零重放。由于模型实际返回单行，下一步先用固定 LF 正文补齐显式多行证据，再进入当前私聊持续值守与连续消息调度。多会话另行推进，不新增 IME 或人工并发输入专项。
 
 目标应用版本与定制服务脱敏样例可在联调时补充，不阻塞模拟开发；未取得对应证据之前，不承诺真实客户端兼容性。根目录 scripts/check_docs.py 可直接检查本地 Markdown 文件目标、JSON 示例和案例引用，不联网检查外部链接。

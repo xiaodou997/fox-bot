@@ -271,10 +271,11 @@ known_gaps:
 | 正文范围 | IMPLEMENTED / OFFLINE PASS | 最多 512 UTF-16、12 行纯文本；LF 可用，CR/Tab/其它控制字符拒绝，不截断 |
 | 原生写入 | IMPLEMENTED / OFFLINE PASS | 短单行沿用 Unicode；扩展正文通过有界剪贴板快照、粘贴、完整复制回读并恢复原剪贴板 |
 | 上下文门禁 | IMPLEMENTED / OFFLINE PASS | 输入区变高只允许顶部历史被遮住；底部新增/删改/乱序均阻断 |
-| C08 回执 V4 | IMPLEMENTED / OFFLINE PASS | exact + continuity + content digest；content 仅处理视觉换行，非空白字符必须一致；V3 保留精确兼容 |
-| 真机多行 AI 回复 | NOT_RUN | 必须使用新 RUN、新 incoming 验证一次真实模型、一次 fill/send、VERIFIED_OUTGOING 与零重放 |
+| C08 回执 V4 / IPC v6 | REAL PASS（较长回复） | 发送前复制回读精确；后置长气泡最多 3 个片段、2 个 OCR 编辑并锚定首尾；短回复不放宽，V3 保留精确兼容 |
+| 真机较长 AI 回复 | REAL PASS | 139 UTF-16、真实模型 1 次、fill 1 次、物理发送 1 次、VERIFIED_OUTGOING、同 RUN 零重放 |
+| 真机显式 LF 多行 | NOT_RUN | 本次模型只返回 1 个逻辑行；需固定包含 LF 的独立真机任务 |
 
-实现和验收步骤见[G3c-3 说明](../development/G3C3_MULTILINE_REPLY.md)。在真机回执产生前，不把离线剪贴板、合成 worker 或此前短回复 PASS 外推为真实多行支持。
+实现见[G3c-3 说明](../development/G3C3_MULTILINE_REPLY.md)，真实证据见[较长回复回执](../acceptance/receipts/2026-10-03-g3c3-long-reply-real.md)。该 PASS 不外推到显式换行、连续值守或多会话。
 
 ### 多接口与本地设置（2026-10-03）
 
