@@ -1,0 +1,25 @@
+{
+  "version": 2,
+  "default_connection": "primary",
+  "connections": [
+    {
+      "id": "primary",
+      "name": "常用接口",
+      "protocol": "chat_completions",
+      "endpoint": "https://api.example.com/v1/chat/completions",
+      "api_key": "",
+      "model": "replace-with-your-model"
+    },
+    {
+      "id": "local",
+      "name": "本地模型",
+      "protocol": "chat_completions",
+      "endpoint": "http://127.0.0.1:1234/v1/chat/completions",
+      "api_key": "",
+      "model": "replace-with-local-model"
+    }
+  ],
+  "reply": {
+    "system_prompt": "请根据最后一条用户消息简短回答，使用单行，不超过50个字。"
+  }
+}

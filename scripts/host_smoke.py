@@ -87,6 +87,11 @@ def main() -> None:
             path.write_text(json.dumps(config))
             env = dict(os.environ)
             env.pop('FOXBOT_HTTP_TOKEN', None)
+            # Synthetic subprocesses share a temporary user-data scope, not the user's live lock.
+            home = directory / 'isolated-home'
+            home.mkdir(mode=0o700)
+            env['HOME'] = str(home)
+            env['XDG_DATA_HOME'] = str(home / 'data')
 
             def launch():
                 process = subprocess.Popen([str(binary), 'run', str(path), str(directory / 'ledger'),

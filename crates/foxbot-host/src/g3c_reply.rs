@@ -1,5 +1,6 @@
 //! G3c-2: explicitly armed, one real incoming message -> HTTP reply -> native send.
-//! No daemon, historical backfill, implicit model retry, plaintext ledger or target navigation.
+//! Local multi-connection mode is the default. Legacy encrypted runs remain isolated.
+//! No daemon, historical backfill, implicit model retry or target navigation.
 use crate::{
     HostError, Result,
     credentials::{CredentialRef, CredentialStore, NativeCredentials},
@@ -30,25 +31,88 @@ pub struct ReplyOnceConfig {
     pub schema_version: u32,
     pub http: HttpConfig,
     pub token: Option<CredentialRef>,
-    pub ledger_key: CredentialRef,
+    pub ledger_key: Option<CredentialRef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub connection_id: Option<String>,
+    #[serde(skip)]
+    pub api_key: Option<String>,
     pub provider: ProviderProfile,
     pub wait_ms: u64,
     pub poll_ms: u64,
 }
 impl ReplyOnceConfig {
     pub fn load(path: &Path) -> Result<Self> {
-        let config: Self = read_private_json(path)?;
+        Self::load_selected(path, None)
+    }
+
+    fn load_selected(path: &Path, pinned: Option<&str>) -> Result<Self> {
+        let value = crate::local_config::read_value(path)?;
+        let config = if value.get("version").and_then(|v| v.as_u64()) == Some(2) {
+            let local: crate::local_config::LocalConfig =
+                serde_json::from_value(value).map_err(|_| HostError::Config)?;
+            Self::from_local(&local, pinned)?
+        } else {
+            if pinned.is_some() {
+                return Err(HostError::Config);
+            }
+            let legacy: Self = read_private_json(path)?;
+            if legacy.schema_version != 1 || legacy.connection_id.is_some() {
+                return Err(HostError::Config);
+            }
+            legacy
+        };
         config.validate()?;
         Ok(config)
     }
+    pub(crate) fn from_local(
+        local: &crate::local_config::LocalConfig,
+        pinned: Option<&str>,
+    ) -> Result<Self> {
+        local.validate()?;
+        let c = local.selected(pinned)?;
+        Ok(Self {
+            schema_version: 2,
+            http: c.http(),
+            token: None,
+            ledger_key: None,
+            connection_id: Some(c.id.clone()),
+            api_key: Some(c.api_key.clone()),
+            provider: c.profile(&local.reply.system_prompt),
+            wait_ms: 60_000,
+            poll_ms: 1000,
+        })
+    }
+    fn open_runtime(&self, path: &Path) -> Result<Runtime> {
+        self.validate()?;
+        if self.schema_version == 2 {
+            return Ok(Runtime::open_local(path)?);
+        }
+        let key = self.ledger_key.as_ref().ok_or(HostError::Config)?;
+        let secret = NativeCredentials.load(key, "ledger")?;
+        Ok(Runtime::open_encrypted(path, secret.ledger_key()?)?)
+    }
     fn validate(&self) -> Result<()> {
         self.http.validate().map_err(|_| HostError::Config)?;
-        self.ledger_key.validate()?;
+        if let Some(key) = &self.ledger_key {
+            key.validate()?;
+        }
+        match self.schema_version {
+            1 if self.ledger_key.is_some()
+                && self.connection_id.is_none()
+                && self.api_key.is_none() => {}
+            2 if self.ledger_key.is_none()
+                && self.token.is_none()
+                && self
+                    .connection_id
+                    .as_deref()
+                    .is_some_and(crate::local_config::identifier)
+                && self.api_key.is_some() => {}
+            _ => return Err(HostError::Config),
+        }
         if let Some(token) = &self.token {
             token.validate()?;
         }
-        if self.schema_version != 1
-            || self.http.endpoint.contains("YOUR-PROVIDER.invalid")
+        if self.http.endpoint.contains("YOUR-PROVIDER.invalid")
             || self.http.model.as_deref() == Some("YOUR_MODEL")
             || !(100..=5000).contains(&self.poll_ms)
             || self.wait_ms < self.poll_ms
@@ -65,12 +129,25 @@ impl ReplyOnceConfig {
         Ok(())
     }
     fn digest(&self) -> Result<String> {
+        if self.schema_version == 2 {
+            // Only the pinned connection and reply semantics, not defaults or unrelated entries.
+            // Credential changes are separately fenced by HttpReplyService::profile_tag.
+            return Ok(
+                format!("{:x}", Sha256::digest(serde_json::to_vec(&serde_json::json!({
+                "connection_id":self.connection_id, "http":self.http, "provider":self.provider
+            })).map_err(|_| HostError::Config)?)),
+            );
+        }
         Ok(format!(
             "{:x}",
             Sha256::digest(serde_json::to_vec(self).map_err(|_| HostError::Config)?)
         ))
     }
     fn service(&self, store: &impl CredentialStore) -> Result<HttpReplyService> {
+        if self.schema_version == 2 {
+            let key = self.api_key.as_deref().filter(|s| !s.is_empty());
+            return HttpReplyService::new(self.http.clone(), key).map_err(|_| HostError::Config);
+        }
         let token = self
             .token
             .as_ref()
@@ -95,6 +172,8 @@ enum Progress {
 #[serde(deny_unknown_fields)]
 struct RunState {
     schema_version: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    connection_id: Option<String>,
     config_digest: String,
     profile_tag: String,
     binding: NativeConversationBinding,
@@ -105,7 +184,7 @@ struct RunState {
     request_id: Option<String>,
     action_id: Option<String>,
 }
-fn run_directory(session: &str, run: &str) -> Result<PathBuf> {
+fn run_directory(config_path: &Path, session: &str, run: &str) -> Result<PathBuf> {
     if run.is_empty()
         || run.len() > 40
         || !run
@@ -113,6 +192,24 @@ fn run_directory(session: &str, run: &str) -> Result<PathBuf> {
             .all(|b| b.is_ascii_alphanumeric() || b"-_".contains(&b))
     {
         return Err(HostError::Config);
+    }
+    if crate::local_config::read_value(config_path)?
+        .get("version")
+        .and_then(|v| v.as_u64())
+        == Some(2)
+    {
+        if !crate::local_config::identifier(session) {
+            return Err(HostError::Config);
+        }
+        let legacy = PathBuf::from("target/g2d-real")
+            .join(session)
+            .join("g3c-2")
+            .join(run);
+        if legacy.join("run.json").exists() || legacy.join("runtime").exists() {
+            return Err(HostError::Config); // Do not recreate an old run using a different store.
+        }
+        let root = config_path.parent().ok_or(HostError::Config)?;
+        return Ok(root.join("runs").join(session).join(run));
     }
     Ok(crate::g2d_real::session_directory(session)?
         .join("g3c-2")
@@ -213,6 +310,7 @@ fn report(
     Ok(
         serde_json::json!({"schema_version":"foxbot.g3c-reply-once.v1", "status":state.outcome,
         "action_state":action_state, "model_jobs_this_invocation":model_jobs, "native":stats,
+        "connection_id":state.connection_id,
         "encrypted_outbox":runtime.is_encrypted(), "trigger_source":"NATIVE_NEW_INCOMING",
         "reply_source":"HTTP_REPLY_PROVIDER", "raw_text_included":false,
         "delivery_confirmed":false, "read_confirmed":false}),
@@ -224,6 +322,7 @@ fn validate_state(
     service: &HttpReplyService,
 ) -> Result<()> {
     if state.schema_version != 1
+        || state.connection_id != config.connection_id
         || state.config_digest != config.digest()?
         || state.profile_tag != service.profile_tag()
     {
@@ -251,9 +350,9 @@ pub fn check(config_path: &Path, session: &str) -> Result<serde_json::Value> {
     let config = ReplyOnceConfig::load(config_path)?;
     let _binding = g3c_real::binding(session)?;
     let _service = config.service(&NativeCredentials)?;
-    NativeCredentials
-        .load(&config.ledger_key, "ledger")?
-        .ledger_key()?;
+    if let Some(key) = &config.ledger_key {
+        NativeCredentials.load(key, "ledger")?.ledger_key()?;
+    }
     Ok(
         serde_json::json!({"status":"CONFIG_AND_CREDENTIALS_AVAILABLE", "model_requests":0,
         "native_chat_operations":0, "secret_included":false,
@@ -267,7 +366,16 @@ pub fn arm(
     session: &str,
     run: &str,
 ) -> Result<serde_json::Value> {
-    let config = ReplyOnceConfig::load(config_path)?;
+    let directory = run_directory(config_path, session, run)?;
+    let existing: Option<RunState> = if directory.join("run.json").exists() {
+        Some(read_private_json(&directory.join("run.json"))?)
+    } else {
+        None
+    };
+    let config = ReplyOnceConfig::load_selected(
+        config_path,
+        existing.as_ref().and_then(|s| s.connection_id.as_deref()),
+    )?;
     let owner = DeviceOwner::acquire()?;
     let mut binding = g3c_real::binding(session)?;
     binding.binding.provider = config.provider.clone();
@@ -278,8 +386,7 @@ pub fn arm(
     binding.binding.reply_ttl_ms = config.http.total_timeout_ms.saturating_add(60_000);
     binding.binding.validate()?;
     let service = config.service(&NativeCredentials)?;
-    let secret = NativeCredentials.load(&config.ledger_key, "ledger")?;
-    let directory = run_directory(session, run)?;
+
     if directory.join("run.json").exists() {
         let state: RunState = read_private_json(&directory.join("run.json"))?;
         validate_state(&state, &config, &service)?;
@@ -308,7 +415,7 @@ pub fn arm(
         return Err(HostError::Untrusted);
     }
     private_directory(&directory)?;
-    let mut runtime = Runtime::open_encrypted(directory.join("runtime"), secret.ledger_key()?)?;
+    let mut runtime = config.open_runtime(&directory.join("runtime"))?;
     let state = arm_runtime(
         &mut runtime,
         &config,
@@ -348,6 +455,7 @@ fn arm_runtime(
     baseline.draft_text = Some(String::new());
     Ok(RunState {
         schema_version: 1,
+        connection_id: config.connection_id.clone(),
         config_digest: config.digest()?,
         profile_tag: service.profile_tag().into(),
         binding,
@@ -367,14 +475,13 @@ pub async fn execute(
     run: &str,
     cancellation: CancellationToken,
 ) -> Result<serde_json::Value> {
-    let config = ReplyOnceConfig::load(config_path)?;
     let owner = DeviceOwner::acquire()?;
-    let directory = run_directory(session, run)?;
-    let service = config.service(&NativeCredentials)?;
-    let secret = NativeCredentials.load(&config.ledger_key, "ledger")?;
+    let directory = run_directory(config_path, session, run)?;
     let mut state: RunState = read_private_json(&directory.join("run.json"))?;
+    let config = ReplyOnceConfig::load_selected(config_path, state.connection_id.as_deref())?;
+    let service = config.service(&NativeCredentials)?;
     validate_state(&state, &config, &service)?;
-    let mut runtime = Runtime::open_encrypted(directory.join("runtime"), secret.ledger_key()?)?;
+    let mut runtime = config.open_runtime(&directory.join("runtime"))?;
     execute_runtime(
         &config,
         &service,

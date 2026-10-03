@@ -6,11 +6,13 @@ pub mod credentials;
 pub mod g2d_real;
 pub mod g3c_real;
 pub mod g3c_reply;
+pub mod local_config;
 pub mod native_bridge;
 pub mod native_read;
 pub mod native_send;
 pub mod ownership;
 pub mod scheduler;
+pub mod settings;
 pub use config::*;
 pub use scheduler::*;
 #[cfg(test)]
@@ -20,6 +22,14 @@ mod tests;
 pub enum HostError {
     #[error("invalid host configuration or command")]
     Config,
+    #[error("configuration changed; reload before saving")]
+    ConfigChanged,
+    #[error("add and select an AI connection first; the pinned connection may have been removed")]
+    NoConnection,
+    #[error("select another default connection before deleting this one")]
+    DefaultConnectionInUse,
+    #[error("enter the API key again, or clear it explicitly, when changing the endpoint")]
+    KeyRequiredForNewEndpoint,
     #[error("local runtime operation failed")]
     Storage,
     #[error("device execution scope is busy")]

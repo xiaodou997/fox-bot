@@ -35,12 +35,12 @@ fn configuration(server: &Server, business: bool) -> ReplyOnceConfig {
     http.max_attempts = 1;
     http.max_in_flight = 1;
     ReplyOnceConfig {
-        schema_version: 1,
+        schema_version: 2,
         http,
         token: None,
-        ledger_key: CredentialRef {
-            id: "synthetic-key".into(),
-        },
+        ledger_key: None,
+        connection_id: Some("test-connection".into()),
+        api_key: Some(String::new()),
         provider: ProviderProfile::Custom,
         wait_ms: 100,
         poll_ms: 100,
@@ -133,7 +133,7 @@ impl Fixture {
         .unwrap();
         let frame = channel.read_messages().unwrap();
         drop(channel);
-        let mut runtime = Runtime::open_encrypted(dir.path().join("runtime"), &[7; 32]).unwrap();
+        let mut runtime = Runtime::open_local(dir.path().join("runtime")).unwrap();
         let state = arm_runtime(
             &mut runtime,
             &config,
@@ -170,7 +170,7 @@ impl Fixture {
     }
     fn reopen(&mut self) {
         self.runtime = Runtime::open_simulation(self.dir.path().join("unused-temp")).unwrap();
-        self.runtime = Runtime::open_encrypted(self.dir.path().join("runtime"), &[7; 32]).unwrap();
+        self.runtime = Runtime::open_local(self.dir.path().join("runtime")).unwrap();
         self.state = read_private_json(&self.dir.path().join("run.json")).unwrap();
     }
 }
@@ -200,8 +200,9 @@ async fn new_incoming_calls_http_and_native_once_and_replay_does_neither() {
             .contains("new-question-771")
     );
     let bytes = fs::read(f.dir.path().join("runtime/ledger.sqlite3")).unwrap();
-    let marker = b"new-question-771";
-    assert!(!bytes.windows(marker.len()).any(|v| v == marker));
+    assert!(bytes.starts_with(b"SQLite format 3\0"));
+    assert_eq!(result["encrypted_outbox"], false);
+    assert_eq!(result["connection_id"], "test-connection");
 }
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn no_new_message_never_invokes_model_and_arm_baseline_stays_fixed() {
@@ -415,6 +416,104 @@ fn fresh_identical_text_is_new_but_existing_message_is_not() {
     after.conversation = "b".repeat(64);
     assert!(new_incoming(&before, &after).is_err());
 }
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn multi_connection_defaults_and_other_edits_do_not_switch_a_pinned_task() {
+    use crate::local_config::{Connection, LocalConfig, ReplyPreferences};
+    let a = Server::start().await;
+    let b = Server::start().await;
+    let mut f = Fixture::new(&a, false, "ok");
+    let make = |id: &str, server: &Server| Connection {
+        id: id.into(),
+        name: id.into(),
+        protocol: Protocol::ChatCompletions,
+        endpoint: format!("{}/chat/completions", server.url),
+        api_key: format!("synthetic-key-{id}"),
+        model: Some("synthetic-model".into()),
+        context_mode: ContextMode::ClientManaged,
+        receipt_endpoint: None,
+        idempotency_supported: false,
+        staging_contract: false,
+    };
+    let mut local = LocalConfig {
+        version: 2,
+        default_connection: Some("a".into()),
+        connections: vec![make("a", &a), make("b", &b)],
+        reply: ReplyPreferences::default(),
+    };
+    f.config = ReplyOnceConfig::from_local(&local, None).unwrap();
+    f.config.wait_ms = 100;
+    f.config.poll_ms = 100;
+    f.service = f.config.service(&NativeCredentials).unwrap(); // Inline mode never invokes the store.
+    f.state.connection_id = Some("a".into());
+    f.state.config_digest = f.config.digest().unwrap();
+    f.state.profile_tag = f.service.profile_tag().into();
+    local.default_connection = Some("b".into());
+    local.connections[1].api_key = "edited-unrelated-key".into();
+    local.connections[0].name = "renamed-a".into();
+    let pinned = ReplyOnceConfig::from_local(&local, f.state.connection_id.as_deref()).unwrap();
+    assert!(
+        validate_state(
+            &f.state,
+            &pinned,
+            &pinned.service(&NativeCredentials).unwrap()
+        )
+        .is_ok()
+    );
+    let config_path = f.dir.path().join("config.json");
+    write_private_json(&config_path, &local).unwrap();
+    let loaded =
+        ReplyOnceConfig::load_selected(&config_path, f.state.connection_id.as_deref()).unwrap();
+    assert_eq!(loaded.connection_id.as_deref(), Some("a"));
+    messages(f.dir.path(), &[("only-a-should-reply", "THEM")]);
+    assert_eq!(
+        f.execute(CancellationToken::new()).await["action_state"],
+        "VERIFIED_OUTGOING"
+    );
+    assert_eq!(a.state.lock().unwrap().seen.len(), 1);
+    assert_eq!(b.state.lock().unwrap().seen.len(), 0);
+    f.reopen();
+    f.execute(CancellationToken::new()).await;
+    assert_eq!(a.state.lock().unwrap().seen.len(), 1);
+    local.connections[0].api_key = "changed-active-key".into();
+    let changed = ReplyOnceConfig::from_local(&local, Some("a")).unwrap();
+    assert!(
+        validate_state(
+            &f.state,
+            &changed,
+            &changed.service(&NativeCredentials).unwrap()
+        )
+        .is_err()
+    );
+    local.connections.remove(0);
+    assert!(ReplyOnceConfig::from_local(&local, Some("a")).is_err());
+}
+
+#[test]
+fn normal_local_store_needs_no_credentials_and_never_rewrites_encrypted_history() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("local");
+    let runtime = Runtime::open_local(&root).unwrap();
+    assert!(!runtime.is_encrypted());
+    drop(runtime);
+    assert!(
+        fs::read(root.join("ledger.sqlite3"))
+            .unwrap()
+            .starts_with(b"SQLite format 3\0")
+    );
+    assert!(Runtime::open_local(&root).is_ok());
+    let old = dir.path().join("old");
+    fs::create_dir(&old).unwrap();
+    fs::write(
+        old.join("ledger.sqlite3"),
+        b"opaque encrypted old database contents",
+    )
+    .unwrap();
+    let before = fs::read(old.join("ledger.sqlite3")).unwrap();
+    assert!(Runtime::open_local(&old).is_err());
+    assert_eq!(before, fs::read(old.join("ledger.sqlite3")).unwrap());
+    assert!(!old.join("owner.lock").exists());
+}
+
 #[test]
 fn config_rejects_embedded_secrets_and_reply_limits_are_non_destructive() {
     let mut value: serde_json::Value =

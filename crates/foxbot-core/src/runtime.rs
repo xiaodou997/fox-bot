@@ -31,6 +31,27 @@ struct Task {
 }
 
 impl Runtime {
+    /// Normal local storage for real usage. No credential setup and no implicit conversion
+    /// of existing encrypted databases. Runtime/outbox/recovery semantics are unchanged.
+    pub fn open_local(directory: impl AsRef<Path>) -> Result<Self> {
+        let database = directory.as_ref().join("ledger.sqlite3");
+        if let Ok(metadata) = fs::symlink_metadata(&database) {
+            if !metadata.is_file() || metadata.file_type().is_symlink() {
+                return Err(Error::UnsafeState);
+            }
+            if metadata.len() > 0 {
+                let mut header = [0u8; 16];
+                let mut file = fs::File::open(&database)?;
+                std::io::Read::read_exact(&mut file, &mut header)
+                    .map_err(|_| Error::ProtectedStore)?;
+                if &header != b"SQLite format 3\0" {
+                    return Err(Error::ProtectedStore);
+                }
+            }
+        }
+        Self::open_inner(directory.as_ref(), None)
+    }
+
     /// Explicit plaintext fixture entry. Never used as a fallback for a protected store.
     pub fn open_simulation(directory: impl AsRef<Path>) -> Result<Self> {
         Self::open_inner(directory.as_ref(), None)

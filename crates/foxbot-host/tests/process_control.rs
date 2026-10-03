@@ -12,9 +12,16 @@ impl Drop for ChildGuard {
         let _ = self.0.wait();
     }
 }
-fn spawn(args: &[&str]) -> (ChildGuard, mpsc::Receiver<String>) {
+fn isolated_command(home: &std::path::Path) -> Command {
+    let mut command = Command::new(BIN);
+    command
+        .env("HOME", home)
+        .env("XDG_DATA_HOME", home.join("data"));
+    command
+}
+fn spawn(home: &std::path::Path, args: &[&str]) -> (ChildGuard, mpsc::Receiver<String>) {
     let mut child = ChildGuard(
-        Command::new(BIN)
+        isolated_command(home)
             .args(args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -48,14 +55,16 @@ fn separate_processes_share_device_lock_across_ledgers_and_stop_with_stdin_open(
     let dir = tempfile::tempdir().unwrap();
     let cfg = dir.path().join("config.json");
     std::fs::write(&cfg, include_str!("../../../examples/host-synthetic.json")).unwrap();
-    let (mut owner, lines) = spawn(&["lock-probe", "--hold"]);
+    let home = dir.path().join("isolated-home");
+    std::fs::create_dir(&home).unwrap();
+    let (mut owner, lines) = spawn(&home, &["lock-probe", "--hold"]);
     assert_eq!(
         lines.recv_timeout(Duration::from_secs(3)).unwrap(),
         "LOCKED"
     );
     for name in ["ledger-a", "ledger-b"] {
         let path = dir.path().join(name);
-        let result = Command::new(BIN)
+        let result = isolated_command(&home)
             .args([
                 "run",
                 cfg.to_str().unwrap(),
@@ -72,13 +81,16 @@ fn separate_processes_share_device_lock_across_ledgers_and_stop_with_stdin_open(
     owner.0.kill().unwrap();
     owner.0.wait().unwrap();
     let path = dir.path().join("after-release");
-    let (mut host, lines) = spawn(&[
-        "run",
-        cfg.to_str().unwrap(),
-        path.to_str().unwrap(),
-        "--allow-network",
-        "--allow-plaintext-synthetic",
-    ]);
+    let (mut host, lines) = spawn(
+        &home,
+        &[
+            "run",
+            cfg.to_str().unwrap(),
+            path.to_str().unwrap(),
+            "--allow-network",
+            "--allow-plaintext-synthetic",
+        ],
+    );
     let started: serde_json::Value =
         serde_json::from_str(&lines.recv_timeout(Duration::from_secs(3)).unwrap()).unwrap();
     assert_eq!(started["event"], "started_paused");

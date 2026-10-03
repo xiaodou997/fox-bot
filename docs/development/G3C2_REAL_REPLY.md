@@ -41,7 +41,15 @@ IPC 更新为 `foxbot.native-send-worker.v4`，**读取/回执解析规则仍为
 
 模型可以返回 no_reply/handoff，不会创建发送动作。无效 JSON、截断响应、超时、目标或上下文变化不会变成“发送成功”。VERIFIED_OUTGOING 表示观察到新的匹配己方消息，不表示平台送达或已读。
 
-## 4. 配置准备
+## 4. 当前配置方式（2026-10-03 更新）
+
+普通用户双击项目根目录 `打开FoxBot设置.command`，在本机页面添加多个 AI 接口，直接填写 API Key 并保存。配置使用 v2 JSON、任务使用普通 SQLite；无需下面历史版的钥匙串步骤。详见[本地设置说明](LOCAL_SETTINGS.md)。
+
+当前命令使用 `CONFIG="$(target/debug/foxbot-host config-path)"` 取得设置页保存的文件，配置预检改用 `g3c-reply-check "$CONFIG" g2d-test --check-config`。arm/once 的 CONFIG 参数也改为这份文件。每个新任务固定准备时的默认接口，切换默认接口不会切换现有任务；选定接口改变后重启会拒绝旧任务而不是重发。
+
+普通构建默认无加密功能；只有读取旧 v1 加密记录时才显式启用 `--features encrypted-ledger`。以下保留旧配置格式作为历史兼容说明，**不是普通用户的操作步骤**。
+
+## 4a. 旧 v1 配置准备（历史兼容）
 
 本轮检查了本项目 config/configs/local/artifacts/examples/target/g2d-real 及 FoxBot 专用用户配置目录，仅找到示例，没有发现可直接使用的真实 AI 配置。不要借用其他项目或其他软件的 API Key。
 
@@ -66,7 +74,7 @@ python3 -c 'import getpass,sys; sys.stdout.write(getpass.getpass("API Key: "))' 
 
 开发二进制重建后，旧 Keychain 条目的权限可能需要重新授权；本期保留无交互失败，不能覆盖旧账本 key 或降级明文来继续。配置好凭据之后不要无故重建二进制再执行同一验收。
 
-## 5. 执行命令
+## 5. 开发联调命令（下列路径为旧 v1 示例）
 
 无需模型配置即可验证私有原生读链（不建立新基线、不发送）：
 
@@ -101,6 +109,6 @@ target/debug/foxbot-host g3c-reply-once artifacts/local/g3c2.json \
 
 ## 6. 本地证据与下一步
 
-每次联调状态位于 `target/g2d-real/<SESSION>/g3c-2/<RUN>/`。run.json 保存配置摘要、绑定、历史签名和阶段，不保存聊天原文；原始上下文与 AI 完整回复进入 SQLCipher 账本。公开报告只包含状态、model job 次数和 native 调用计数；BusinessV1 的反馈请求次数不混作模型生成次数。
+旧 v1 联调状态位于 `target/g2d-real/<SESSION>/g3c-2/<RUN>/`，仍使用 SQLCipher。当前 v2 本地配置把任务保存到配置同级的 `runs/<SESSION>/<RUN>/`，上下文和完整 AI 回复使用普通 SQLite，无需账本密钥。run.json 保存选定接口 ID、配置摘要、绑定、历史签名和阶段，不保存聊天原文和 API Key；不同存储模式不隐式转换已有任务。公开报告只包含状态、model job 次数和 native 调用计数；BusinessV1 的反馈请求次数不混作模型生成次数。
 
 验收分别记录：离线真实 HTTP 协议＋合成 worker、真实微信只读检查、真实模型＋真实发送。前两项不能代替第三项。待真实配置可用，先完成一条短回复的端到端验收，再扩展多行/长文本，最后进入持续值守；不扩展 IME 或人工共编专项。

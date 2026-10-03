@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum StorageConfig {
+    Local,
     Protected { key: CredentialRef },
     SyntheticPlaintext,
 }
@@ -45,6 +46,7 @@ impl HostConfig {
         let service = foxbot_http::HttpReplyService::new(self.http.clone(), bearer)
             .map_err(|_| HostError::Config)?;
         let runtime = match &self.storage {
+            StorageConfig::Local => foxbot_core::Runtime::open_local(directory)?,
             StorageConfig::Protected { key } => {
                 let secret = store.load(key, "ledger")?;
                 foxbot_core::Runtime::open_encrypted(directory, secret.ledger_key()?)?

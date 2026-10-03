@@ -87,10 +87,30 @@ async fn main() {
 }
 async fn run() -> foxbot_host::Result<()> {
     let args: Vec<_> = std::env::args().skip(1).collect();
+    if args.first().is_some_and(|s| s == "settings") {
+        let rest = &args[1..];
+        let no_open = rest.iter().any(|s| s == "--no-open");
+        let paths: Vec<_> = rest.iter().filter(|s| s.as_str() != "--no-open").collect();
+        if rest.len() > 2 || paths.len() > 1 {
+            return Err(HostError::Config);
+        }
+        let path = if let Some(path) = paths.first() {
+            PathBuf::from(path)
+        } else {
+            local_config::default_path()?
+        };
+        return settings::serve(path, !no_open).await;
+    }
+    if args.first().is_some_and(|s| s == "config-path") && args.len() == 1 {
+        println!("{}", local_config::default_path()?.display());
+        return Ok(());
+    }
     if args.is_empty() || matches!(args[0].as_str(), "help" | "--help") {
         println!(
             "foxbot-host run CONFIG STATE --allow-network [--allow-plaintext-synthetic]\n\
                   Starts PAUSED. JSON stdin: resume, message, status, pause, stop. EOF/Ctrl-C stops.\n\
+                  foxbot-host settings [CONFIG] [--no-open]  (local multi-connection settings)\n\
+                  foxbot-host config-path\n\
                   foxbot-host credential-check NAME --allow-keychain-read\n\
                   foxbot-host init-key NAME --confirm-keychain-write\n\
                   foxbot-host set-token NAME --confirm-keychain-write  (secret on stdin, never argv)\n\
@@ -103,7 +123,7 @@ async fn run() -> foxbot_host::Result<()> {
                   foxbot-host g3c-inspect WORKER SESSION --allow-native-read\n\
                   foxbot-host g3c-send-once WORKER SESSION RUN KEYNAME --allow-single-test-send\n\
                   foxbot-host g3c-reply-read-check WORKER SESSION --allow-native-read\n\
-                  foxbot-host g3c-reply-check CONFIG SESSION --allow-keychain-read\n\
+                  foxbot-host g3c-reply-check CONFIG SESSION --check-config\n\
                   foxbot-host g3c-reply-arm CONFIG WORKER SESSION RUN --allow-native-read\n\
                   foxbot-host g3c-reply-once CONFIG WORKER SESSION RUN --allow-network --allow-single-test-send\n\
                   Test only: foxbot-host lock-probe --hold"
@@ -126,7 +146,7 @@ async fn run() -> foxbot_host::Result<()> {
                 g3c_reply::read_check(Path::new(&args[1]), &args[2])?
             } else if args[0] == "g3c-reply-check"
                 && args.len() == 4
-                && args[3] == "--allow-keychain-read"
+                && matches!(args[3].as_str(), "--check-config" | "--allow-keychain-read")
             {
                 g3c_reply::check(Path::new(&args[1]), &args[2])?
             } else if args[0] == "g3c-reply-arm"

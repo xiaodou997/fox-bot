@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>FoxBot · AI 接口设置</title><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script></head>
+<body><main>
+<header><div class="brand"><span class="mark" aria-hidden="true">F</span><div><p class="eyebrow">FOXBOT / SETTINGS</p><h1>AI 接口</h1></div></div><div class="header-actions"><button id="folder" type="button">打开配置目录</button><button id="export" type="button">导出配置（不含 Key）</button></div></header>
+<p class="intro">保存多个接入点，选择一个作为默认接口。更换默认接口只影响新任务，不会中途切换已有回复。</p>
+<div id="status" role="status" aria-live="polite" class="status">正在读取本地配置…</div>
+<div class="layout">
+<aside><div class="section-title"><h2>我的接口 <span id="count">0</span></h2><button id="add" class="primary" type="button">＋ 添加</button></div><div id="connections"></div><p id="empty" class="empty">还没有配置接口。<br>点击“添加”，填写地址、Key 和模型即可。</p><div class="aside-note"><strong>本地保存，无需钥匙串</strong><p>API Key 以明文保存在本机配置文件。不要直接分享该文件；上方“导出配置”会移除 Key。</p></div></aside>
+<section class="editor" aria-labelledby="editor-title"><div class="editor-header"><div><p class="eyebrow" id="editor-kind">NEW CONNECTION</p><h2 id="editor-title">添加第一个接口</h2></div><span id="default-badge" class="badge" hidden>默认接口</span></div>
+<form id="connection-form">
+<div class="two-col"><label>名称<input id="name" name="name" required maxlength="80" placeholder="例如：常用接口、本地模型"></label><label>接口类型<select id="protocol"><option value="chat_completions">Chat Completions 兼容接口</option><option value="business_v1">自定义业务接口（BusinessV1）</option></select></label></div>
+<label>完整接口地址<input id="endpoint" name="endpoint" type="url" required maxlength="2048" placeholder="https://api.example.com/v1/chat/completions" spellcheck="false"></label><p class="field-note">填完整请求地址。本地接口可使用 http://127.0.0.1:端口/…；不会自动尝试其他地址。</p>
+<label for="api-key">API Key <span id="key-state" class="muted"></span></label><div class="key-row"><input id="api-key" name="api-key" type="password" maxlength="8192" autocomplete="off" spellcheck="false" placeholder="直接粘贴 API Key"><button id="toggle-key" type="button" aria-label="显示新输入的 API Key">显示</button></div>
+<label class="check"><input id="no-key" type="checkbox">此接口无需 API Key（保存后清除已有 Key）</label>
+<label id="model-label">模型名称<input id="model" name="model" required maxlength="256" placeholder="填写服务商提供的模型名称" spellcheck="false"></label>
+<details id="business-options" hidden><summary>业务接口高级选项</summary><label>上下文管理<select id="context-mode"><option value="client_managed">由 FoxBot 提供上下文</option><option value="service_managed">由业务服务管理上下文</option></select></label><label>反馈地址（可选）<input id="receipt-endpoint" type="url" placeholder="https://service.example.com/feedback"></label><label class="check"><input id="idempotency" type="checkbox">服务支持请求去重</label><label class="check"><input id="staging" type="checkbox">服务支持待确认回复与反馈约定</label></details>
+<div class="actions"><button id="save" type="submit" class="primary">保存接口</button><button id="test" type="button">测试连接</button><span class="field-note">保存不需要联网</span></div>
+<div class="secondary-actions"><button id="set-default" type="button" disabled>设为默认</button><button id="duplicate" type="button" disabled>复制接口</button><button id="delete" type="button" class="danger" disabled>删除</button></div>
+</form></section></div>
+<section class="reply-settings"><div><p class="eyebrow">REPLY PREFERENCES</p><h2>回复提示词</h2><p class="muted">用于普通模型。自定义业务接口继续使用服务自身的规则，不会额外加入这段提示词。</p></div><textarea id="system-prompt" rows="3" maxlength="8000" aria-label="回复提示词"></textarea><div class="actions"><button id="save-prompt" type="button">保存提示词</button><span class="field-note">当前联调支持短单行回复；长文、多行尚未开放。</span></div></section>
+<footer><div><span class="dot" aria-hidden="true"></span>仅本机设置页面 · 不会读取聊天或启动自动回复<p id="config-path"></p></div><button id="shutdown" type="button">关闭设置服务</button></footer>
+</main></body></html>

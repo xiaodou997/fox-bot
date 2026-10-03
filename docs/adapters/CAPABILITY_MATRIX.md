@@ -257,11 +257,23 @@ known_gaps:
 | 对象 | 实现 | 边界 |
 | --- | --- | --- |
 | 原生私有 read | IMPLEMENTED | 原文、方向与签名同一解析投影；仅私有 IPC，公开输出脱敏 |
-| arm / once | IMPLEMENTED | 不回填历史，仅处理一个新增 incoming；加密账本与先落盘的 generation claim |
+| arm / once | IMPLEMENTED | 不回填历史，仅处理一个新增 incoming；新版普通 SQLite 与先落盘的 generation claim，旧加密目录不转换 |
 | HTTP 回复与发送 | IMPLEMENTED | 复用 Chat Completions / BusinessV1，模型返回后重检上下文；真实模型验收待配置 |
 | 重放与拒绝分支 | IMPLEMENTED | 不再调用模型/发送；UNKNOWN只读核对；超长/多行不写入、不截断 |
 
 详细步骤见[G3c-2 联调说明](../development/G3C2_REAL_REPLY.md)，实际结果见[联调准备回执](../acceptance/receipts/2026-10-01-g3c2-real-reply-readiness.md)：13/13 离线检查通过（166/61/117），原测试私聊 private read 通过。真实模型端到端待配置；离线协议测试不能自动提升为真实模型或持续值守 PASS。
+
+### 多接口与本地设置（2026-10-03）
+
+| 对象 | 当前实现与范围 |
+| --- | --- |
+| 多个 AI 接入点 | 本地 JSON 明文 api_key，保存/编辑/复制/删除、默认接口，最多 32 项；不自动故障切换 |
+| 设置页 | Rust 内嵌 HTML/CSS/JS，本机浏览器入口；不是完整原生桌面应用或 APK |
+| 连接测试 | 显式确认一次固定 API 测试；不读取聊天，不自动保存，日志和导出去 Key |
+| 新版 G3c-2 存储 | 正常本地 SQLite，无 Keychain 依赖；原任务固定接口，不因默认或无关接口修改而换模型 |
+| 旧数据 | 旧加密入口显式兼容；不覆盖旧 key、不转换历史 UNKNOWN、不把模拟测试当真机验收 |
+
+使用方式与边界见[本地设置说明](../development/LOCAL_SETTINGS.md)。
 
 ### G3b IME Evidence Spike（归档；不再是执行门禁）
 

@@ -178,6 +178,49 @@ impl HttpReplyService {
         &self.profile_tag
     }
 
+    /// Explicit settings-page probe. Exactly one generation request, fixed synthetic input,
+    /// no chat history, no GUI actions, no response text returned to the settings page.
+    pub async fn test_connection(&self, id: &str, cancellation: CancellationToken) -> Result<()> {
+        use foxbot_core::{ContentKind, Direction, InputEvent, Mention, Message};
+        if id.is_empty() || id.len() > 128 || id.chars().any(char::is_control) {
+            return Err(HttpError::Config);
+        }
+        let request = ReplyRequest {
+            request_id: id.into(),
+            conversation_ref: format!("connection-test-{id}"),
+            session_revision: 1,
+            provider_profile_version: 1,
+            input_events: vec![InputEvent {
+                event_id: format!("test-{id}"),
+                message: Message {
+                    canonical_id: Some(format!("test-{id}")),
+                    sender: Some("connection-test".into()),
+                    direction: Direction::Incoming,
+                    mention: Mention::Absent,
+                    kind: ContentKind::Text,
+                    text: Some("连接测试，请仅回复 OK。".into()),
+                    complete: true,
+                    reply_to: None,
+                },
+            }],
+            context: vec![],
+            context_complete: true,
+            system_prompt: None,
+            user_request: None,
+        };
+        let wire = protocol::encode(&self.config, &request, &request.conversation_ref)?;
+        let body = self
+            .post(&self.config.endpoint, &wire, id, 1, false, &cancellation)
+            .await?;
+        let reply = protocol::decode(&self.config, &request, &request.conversation_ref, &body)?;
+        if let foxbot_core::ReplyOutcome::Reply { text } = reply.outcome
+            && text.trim().is_empty()
+        {
+            return Err(HttpError::InvalidResponse);
+        }
+        Ok(())
+    }
+
     /// No await and no networking. A persisted exchange exists BEFORE the server sees anything.
     pub fn begin(
         &self,

@@ -2,7 +2,20 @@
 
 面向微信、QQ、飞书和 X 私信的跨平台消息自动化客户端。
 
-**当前状态：G3c-1 单条发送已真实收口；G3c-2 新消息与 HTTP 回复服务的单次联调入口已实现，真实模型联调待配置。** 已有基线准备、新 incoming 识别、模型回复、原生发送确认和幂等重放代码；未取得真实模型端到端验收，也没有开启持续 AUTO_REPLY。G3c-2 配置与入口见[真实回复联调说明](docs/development/G3C2_REAL_REPLY.md)。桌面界面和 APK 未实现。入口与边界见[G3c-1 说明](docs/development/G3C1_SINGLE_REAL_SEND.md)，本轮状态见[G3c-2 联调准备回执](docs/acceptance/receipts/2026-10-01-g3c2-real-reply-readiness.md)，历史证据见[文档导航](docs/README.md)。
+**当前状态：已有多 AI 接口设置页；API Key 直接保存在本地配置，正常任务使用普通 SQLite，不再要求钥匙串或账本密钥初始化。** G3c-1 单条发送已在测试范围真实收口，G3c-2 单次新消息→HTTP回复→原生发送代码已接入新配置；真实 AI 端到端仍待联调，不代表持续 AUTO_REPLY。设置页是本机浏览器入口，完整桌面应用、APK 和正式发布尚未完成。当前使用方式见[本地设置说明](docs/development/LOCAL_SETTINGS.md)，历史证据见[文档导航](docs/README.md)。
+
+## 配置 AI 接口
+
+macOS 在已构建的项目目录中双击 **`打开FoxBot设置.command`**，添加接口，填写地址、API Key 和模型，保存即可。可添加多个接口并选择默认；保存不需要联网，测试连接单独确认可能的 API 费用。无需执行 `init-key` 或 `set-token`。
+
+开发者首次构建：
+
+```bash
+cargo build --locked -p foxbot-host
+target/debug/foxbot-host settings
+```
+
+API Key 明文保存于本机 `config.json`；页面提供打开配置目录和不含 Key 的导出。不要直接分享原始配置或数据库。当前设置页不会读取微信或启动自动回复；真实联调按[G3c-2 说明](docs/development/G3C2_REAL_REPLY.md)进行。
 
 ## 产品边界
 
@@ -43,14 +56,14 @@ python3 scripts/http_smoke.py
 
 该 smoke 自行启动 loopback 测试服务，验证真实 HTTP 请求、模拟发送、重放去重和回执 503 后的独立补偿。只使用合成数据，不读取真实密钥或连接外部模型。配置、API 生命周期、服务端幂等/暂存契约及限制见 [G1b 开发说明](docs/development/G1_HTTP_PROVIDER.md)。
 
-## 持续宿主与安全配置
+## 持续宿主与历史加密入口（开发用）
 
 ```bash
 cargo build --locked -p foxbot-host
 python3 scripts/host_smoke.py
 ```
 
-宿主启动时暂停，经明确 resume 后处理已配置的新消息；HTTP 期间可暂停或停止，回执补偿不重复发送。此 smoke 仅使用合成内容与本机服务，不读现有凭据。macOS 钥匙串引用和 SQLCipher 加密账本的显式入口、权限/恢复边界见 [G1c 开发说明](docs/development/G1_HOST_SECURITY.md)。加密能力不意味着真实客户端或长期值守已验收。
+宿主启动时暂停，经明确 resume 后处理已配置的新消息；HTTP 期间可暂停或停止，回执补偿不重复发送。此 smoke 仅使用合成内容与本机服务，不读现有凭据。旧 Keychain / SQLCipher 路径仅供历史兼容，需要显式构建 `--features encrypted-ledger`，说明见 [G1c 开发说明](docs/development/G1_HOST_SECURITY.md)。普通用户采用上方本地设置流程，不需要加密配置；持续真实值守仍未验收。
 
 ## 集成复核与 macOS 只读探针
 

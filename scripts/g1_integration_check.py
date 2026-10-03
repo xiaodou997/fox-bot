@@ -38,12 +38,14 @@ def fingerprint():
     return digest.hexdigest()
 
 
-TEST_MINIMUMS = {"rust-tests": 166, "cipher-disabled": 1, "python-tests": 61, "swift-tests": 117}
+TEST_MINIMUMS = {"rust-tests": 178, "cipher-disabled": 1, "python-tests": 61, "swift-tests": 117}
 
+
+TEST_MINIMUMS.update({'local-reply-tests': 16, 'settings-tests': 10})
 
 def executed_tests(label, log):
     """Count terminal success summaries, not the number of test functions in source."""
-    if label in {"rust-tests", "cipher-disabled"}:
+    if label in {'rust-tests', 'cipher-disabled', 'local-reply-tests', 'settings-tests'}:
         return sum(int(n) for n in re.findall(r"^test result: ok\. (\d+) passed; 0 failed;", log, re.MULTILINE))
     if label == "python-tests":
         return max([int(n) for n in re.findall(r"^Ran (\d+) tests? in ", log, re.MULTILINE)] or [0])
@@ -97,9 +99,11 @@ def main():
     steps = [
         ("format", [cargo,"fmt","--all","--","--check"]),
         ("clippy", [cargo,"clippy","--workspace","--all-targets","--locked","--","-D","warnings"]),
-        ("rust-tests", [cargo,"test","--workspace","--all-targets","--locked"]),
+        ("rust-tests", [cargo,"test","--workspace","--all-targets","--locked","--features","foxbot-host/encrypted-ledger"]),
         ("cipher-disabled", [cargo,"test","--locked","-p","foxbot-host","--no-default-features","--lib",
                              "tests::disabled_cipher_feature_rejects_protected_entry_without_creating_plaintext","--","--exact"]),
+        ('local-reply-tests', [cargo, 'test', '--locked', '-p', 'foxbot-host', '--no-default-features', '--lib', 'g3c_reply']),
+        ('settings-tests', [cargo, 'test', '--locked', '-p', 'foxbot-host', '--no-default-features', '--lib', 'settings::tests']),
         ("build-tools", [cargo,"build","--locked","-p","foxbot-host","-p","foxbot-http"]),
         ("g2d-bridge-smoke", [cargo,"run","--quiet","--locked","-p","foxbot-host","--",
                               "bridge-sim-probe",str(directory / "g2d-state"),"--allow-plaintext-synthetic"]),
@@ -107,6 +111,7 @@ def main():
                             "gate-only",str(directory / "g3b-state")]),
         ("http-smoke", [sys.executable,"scripts/http_smoke.py"]),
         ("host-smoke", [sys.executable,"scripts/host_smoke.py"]),
+        ('settings-smoke', [sys.executable, 'scripts/settings_smoke.py']),
         ("python-tests", [sys.executable,"-m","unittest","discover","-s","scripts/tests","-p","test_*.py"]),
         ("docs", [sys.executable,"scripts/check_docs.py"]),
         ("whitespace", ["git","diff","--check"]),
