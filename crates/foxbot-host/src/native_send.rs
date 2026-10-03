@@ -279,6 +279,52 @@ impl Drop for Worker {
     }
 }
 
+fn read_frame(reply: WorkerReply) -> Result<NativeReadFrame> {
+    if reply.status != "OBSERVED" {
+        return Err(HostError::Untrusted);
+    }
+    let observation = reply.observation.ok_or(HostError::Untrusted)?;
+    let messages = reply.messages.ok_or(HostError::Untrusted)?;
+    if !observation.frontmost
+        || !observation.conversation_resolved
+        || messages.len() != observation.messages.len()
+        || messages.iter().zip(&observation.messages).any(|(m, s)| {
+            m.text.trim().is_empty()
+                || m.text.len() > 16_384
+                || !m.complete
+                || !s.complete
+                || !matches!(m.direction.as_str(), "ME" | "THEM")
+                || m.direction != s.direction
+                || format!("{:x}", Sha256::digest(m.text.as_bytes())) != s.digest
+                || Some(format!(
+                    "{:x}",
+                    Sha256::digest(crate::native_bridge::continuity_text(&m.text).as_bytes())
+                )) != s.continuity_digest
+        })
+    {
+        return Err(HostError::Untrusted);
+    }
+    Ok(NativeReadFrame {
+        observation,
+        messages,
+    })
+}
+
+/// Read two stable current frames before an operator-confirmed application-session rebind.
+/// This path has no native write capability and intentionally does not assume the old binding.
+pub(crate) fn read_unbound_pair(
+    binary: &Path,
+    owner: &DeviceOwner,
+) -> Result<(NativeReadFrame, NativeReadFrame)> {
+    owner.verify()?;
+    let mut worker = Worker::start(binary, false, Duration::from_secs(60))?;
+    let first = read_frame(worker.request("read", None, None)?)?;
+    owner.verify()?;
+    let second = read_frame(worker.request("read", None, None)?)?;
+    owner.verify()?;
+    Ok((first, second))
+}
+
 #[derive(Default, Serialize)]
 pub struct NativeSendStats {
     pub read_requests: u32,
@@ -354,34 +400,11 @@ impl<'a> NativeSendChannel<'a> {
         self.stats.read_requests += 1;
         let reply = self.worker.request("read", None, None)?;
         self.stats.last_status = reply.status.clone();
-        if reply.status != "OBSERVED" {
+        let frame = read_frame(reply)?;
+        if !frame.observation.matches_binding(&self.binding) {
             return Err(HostError::Untrusted);
         }
-        let observation = reply.observation.ok_or(HostError::Untrusted)?;
-        let messages = reply.messages.ok_or(HostError::Untrusted)?;
-        if !observation.matches_binding(&self.binding)
-            || !observation.frontmost
-            || messages.len() != observation.messages.len()
-            || messages.iter().zip(&observation.messages).any(|(m, s)| {
-                m.text.trim().is_empty()
-                    || m.text.len() > 16_384
-                    || !m.complete
-                    || !s.complete
-                    || !matches!(m.direction.as_str(), "ME" | "THEM")
-                    || m.direction != s.direction
-                    || format!("{:x}", Sha256::digest(m.text.as_bytes())) != s.digest
-                    || Some(format!(
-                        "{:x}",
-                        Sha256::digest(crate::native_bridge::continuity_text(&m.text).as_bytes())
-                    )) != s.continuity_digest
-            })
-        {
-            return Err(HostError::Untrusted);
-        }
-        Ok(NativeReadFrame {
-            observation,
-            messages,
-        })
+        Ok(frame)
     }
 
     /// Bind dispatch to the exact context that produced the reply, not the first post-model read.

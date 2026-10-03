@@ -121,6 +121,7 @@ async fn run() -> foxbot_host::Result<()> {
                   foxbot-host g2d-real-baseline WORKER SESSION ACCOUNT CONVERSATION KIND --allow-private-test-data\n\
                   foxbot-host g2d-real-verify WORKER SESSION --allow-private-test-data\n\
                   foxbot-host g3c-inspect WORKER SESSION --allow-native-read\n\
+                  foxbot-host g3c-rebind-session WORKER SESSION --confirm-same-account\n\
                   foxbot-host g3c-send-once WORKER SESSION RUN KEYNAME --allow-single-test-send\n\
                   foxbot-host g3c-reply-read-check WORKER SESSION --allow-native-read\n\
                   foxbot-host g3c-reply-check CONFIG SESSION --check-config\n\
@@ -202,6 +203,21 @@ async fn run() -> foxbot_host::Result<()> {
             "secret_included":false, "credential_writes":0, "native_chat_operations":0})
         );
         return Ok(());
+    }
+    if args[0] == "g3c-rebind-session" {
+        #[cfg(not(target_os = "macos"))]
+        return Err(HostError::Unsupported);
+        #[cfg(target_os = "macos")]
+        {
+            if args.len() != 4 || args[3] != "--confirm-same-account" {
+                return Err(HostError::Config);
+            }
+            let owner = DeviceOwner::acquire()?;
+            let report =
+                g3c_real::rebind_session(std::path::Path::new(&args[1]), &args[2], &owner)?;
+            println!("{}", report);
+            return Ok(());
+        }
     }
     if matches!(args[0].as_str(), "g3c-inspect" | "g3c-send-once") {
         #[cfg(not(target_os = "macos"))]

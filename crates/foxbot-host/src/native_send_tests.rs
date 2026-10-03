@@ -90,6 +90,13 @@ for line in sys.stdin:
             assert not allow, 'reconciliation must not carry write capability'
             result.update(status='VERIFIED_OUTGOING', verified_outgoing=True)
         result['observation'] = observe()
+        if cmd == 'read':
+            result['messages'] = [
+                {'text': 'anchor-a', 'direction': 'THEM', 'complete': True},
+                {'text': 'anchor-b', 'direction': 'ME', 'complete': True},
+            ]
+            if marker.exists():
+                result['messages'].append({'text': json.loads(marker.read_text())['text'], 'direction': 'ME', 'complete': True})
         if MODE == 'false-receipt' and cmd == 'send':
             result['observation']['messages'] = req['expected']['messages']
         if MODE == 'read-side-effect':
@@ -323,6 +330,24 @@ fn context_signature_can_ignore_spacing_without_relaxing_exact_outgoing_digest()
     assert!(!matching_outgoing(&before, &after, "回复42"));
     after.messages[0].continuity_digest = Some("f".repeat(64));
     assert!(!matching_outgoing(&before, &after, text));
+}
+
+#[test]
+fn unbound_pair_validates_current_context_before_a_binding_refresh() {
+    let dir = tempfile::tempdir().unwrap();
+    let owner = DeviceOwner::acquire_at(&dir.path().join("device")).unwrap();
+    let binary = worker(dir.path(), "ok");
+    let (first, second) = read_unbound_pair(&binary, &owner).unwrap();
+    assert!(first.observation.same_surface(&second.observation));
+    assert!(first.observation.same_messages(&second.observation));
+    assert_eq!(second.messages.len(), 2);
+
+    let mut wrong = binding();
+    wrong.application_session_fingerprint = "e".repeat(64);
+    let mut channel =
+        NativeSendChannel::start(&binary, wrong, &owner, dir.path().join("receipt"), false)
+            .unwrap();
+    assert!(channel.read_messages().is_err());
 }
 
 #[test]

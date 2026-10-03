@@ -47,6 +47,8 @@ IPC 更新为 `foxbot.native-send-worker.v4`，**读取/回执解析规则仍为
 
 当前命令使用 `CONFIG="$(target/debug/foxbot-host config-path)"` 取得设置页保存的文件，配置预检改用 `g3c-reply-check "$CONFIG" g2d-test --check-config`。arm/once 的 CONFIG 参数也改为这份文件。每个新任务固定准备时的默认接口，切换默认接口不会切换现有任务；选定接口改变后重启会拒绝旧任务而不是重发。
 
+微信重启会改变易失的 application-session fingerprint。确认仍是同一账号、同一测试私聊且输入框为空后，使用 `g3c-rebind-session target/macos-probe/debug/foxbot-macos-send g2d-test --confirm-same-account`。它只读取两次当前窗口，要求会话指纹不变且与此前证据至少有两条连续消息重叠，再单独保存 G3c 运行会话绑定；不会改写 G2 baseline/verified 证据、调用模型、回填或发送。
+
 普通构建默认无加密功能；只有读取旧 v1 加密记录时才显式启用 `--features encrypted-ledger`。以下保留旧配置格式作为历史兼容说明，**不是普通用户的操作步骤**。
 
 ## 4a. 旧 v1 配置准备（历史兼容）
@@ -88,6 +90,14 @@ target/debug/foxbot-host g3c-reply-read-check \
 ```bash
 target/debug/foxbot-host g3c-reply-check \
   artifacts/local/g3c2.json g2d-test --allow-keychain-read
+```
+
+如微信自上次验收后重新启动，先执行受控重绑定：
+
+```bash
+target/debug/foxbot-host g3c-rebind-session \
+  target/macos-probe/debug/foxbot-macos-send g2d-test \
+  --confirm-same-account
 ```
 
 原测试私聊保持前台、滚动到底部，使用一个尚未使用的 RUN：

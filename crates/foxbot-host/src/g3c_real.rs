@@ -7,7 +7,7 @@ use crate::{
         BridgeOutcome, NativeBridgeConfig, NativeConversationBinding, NativeObservationBridge,
         PrivateMessageSnapshot,
     },
-    native_send::{NativeSendChannel, NativeSendStats},
+    native_send::{MessageSignature, NativeSendChannel, NativeSendStats, read_unbound_pair},
     ownership::{DeviceOwner, private_directory},
 };
 use foxbot_core::{
@@ -15,6 +15,7 @@ use foxbot_core::{
     simulation::fixture_observation,
 };
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::{
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
@@ -29,6 +30,17 @@ struct Manifest {
     binding: NativeConversationBinding,
 }
 
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SessionRebind {
+    schema_version: u32,
+    root_application_session_fingerprint: String,
+    root_conversation_fingerprint: String,
+    application_session_fingerprint: String,
+    conversation_fingerprint: String,
+    messages: Vec<MessageSignature>,
+}
+
 fn component(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 40
@@ -36,7 +48,7 @@ fn component(value: &str) -> bool {
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'))
 }
-pub(crate) fn binding(session: &str) -> Result<NativeConversationBinding> {
+fn root_binding(session: &str) -> Result<(NativeConversationBinding, PrivateMessageSnapshot)> {
     if !component(session) {
         return Err(HostError::Config);
     }
@@ -45,7 +57,18 @@ pub(crate) fn binding(session: &str) -> Result<NativeConversationBinding> {
     let verified = g2d_real::read_private_json(
         &g2d_real::session_directory(session)?.join("verified-snapshot.json"),
     )?;
-    verified_binding(config, &baseline, &verified)
+    let binding = verified_binding(config, &baseline, &verified)?;
+    Ok((binding, verified))
+}
+
+pub(crate) fn binding(session: &str) -> Result<NativeConversationBinding> {
+    let (root, verified) = root_binding(session)?;
+    let path = g2d_real::session_directory(session)?.join("g3c-session-rebind.json");
+    if !path.exists() {
+        return Ok(root);
+    }
+    let rebind: SessionRebind = g2d_real::read_private_json(&path)?;
+    rebound_binding(&root, &verified, &rebind)
 }
 
 fn verified_binding(
@@ -76,6 +99,163 @@ fn verified_binding(
         return Err(HostError::Untrusted);
     }
     NativeConversationBinding::from_current_snapshot(verified, entry.binding)
+}
+
+fn hash64(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+        && value.bytes().any(|b| b != b'0')
+}
+
+fn verified_signatures(snapshot: &PrivateMessageSnapshot) -> Result<Vec<MessageSignature>> {
+    if snapshot.messages.len() < 2 || snapshot.messages.len() > 64 {
+        return Err(HostError::Untrusted);
+    }
+    snapshot
+        .messages
+        .iter()
+        .map(|message| {
+            let direction = match message.direction {
+                crate::native_bridge::PrivateDirection::Me => "ME",
+                crate::native_bridge::PrivateDirection::Them => "THEM",
+                crate::native_bridge::PrivateDirection::Unknown => {
+                    return Err(HostError::Untrusted);
+                }
+            };
+            if !message.complete || message.sender_fingerprint.is_some() {
+                return Err(HostError::Untrusted);
+            }
+            Ok(MessageSignature {
+                digest: format!("{:x}", Sha256::digest(message.text.as_bytes())),
+                continuity_digest: Some(format!(
+                    "{:x}",
+                    Sha256::digest(crate::native_bridge::continuity_text(&message.text).as_bytes())
+                )),
+                direction: direction.into(),
+                complete: true,
+            })
+        })
+        .collect()
+}
+
+fn longest_context_overlap(previous: &[MessageSignature], current: &[MessageSignature]) -> usize {
+    let mut best = 0;
+    for left in 0..previous.len() {
+        for right in 0..current.len() {
+            let mut count = 0;
+            while left + count < previous.len()
+                && right + count < current.len()
+                && previous[left + count].same_context(&current[right + count])
+            {
+                count += 1;
+            }
+            best = best.max(count);
+        }
+    }
+    best
+}
+
+fn valid_rebind_messages(messages: &[MessageSignature]) -> bool {
+    (2..=64).contains(&messages.len())
+        && messages.iter().all(|message| {
+            hash64(&message.digest)
+                && message.continuity_digest.as_deref().is_some_and(hash64)
+                && message.complete
+                && matches!(message.direction.as_str(), "ME" | "THEM")
+        })
+}
+
+fn rebound_binding(
+    root: &NativeConversationBinding,
+    verified: &PrivateMessageSnapshot,
+    rebind: &SessionRebind,
+) -> Result<NativeConversationBinding> {
+    if rebind.schema_version != 1
+        || rebind.root_application_session_fingerprint != root.application_session_fingerprint
+        || rebind.root_conversation_fingerprint != root.conversation_fingerprint
+        || rebind.conversation_fingerprint != root.conversation_fingerprint
+        || !hash64(&rebind.application_session_fingerprint)
+        || !hash64(&rebind.conversation_fingerprint)
+        || !valid_rebind_messages(&rebind.messages)
+        || longest_context_overlap(&verified_signatures(verified)?, &rebind.messages) < 2
+    {
+        return Err(HostError::Untrusted);
+    }
+    Ok(NativeConversationBinding {
+        application_session_fingerprint: rebind.application_session_fingerprint.clone(),
+        conversation_fingerprint: rebind.conversation_fingerprint.clone(),
+        identity_source: "operator_confirmed_restart_v1".into(),
+        binding: root.binding.clone(),
+    })
+}
+
+/// Explicitly refresh only the volatile application-session fingerprint after an app restart.
+/// The durable conversation key and conversation fingerprint stay fixed, and at least two
+/// contiguous messages must match the previously accepted context.
+pub fn rebind_session(
+    binary: &Path,
+    session: &str,
+    owner: &DeviceOwner,
+) -> Result<serde_json::Value> {
+    let (root, verified) = root_binding(session)?;
+    let directory = g2d_real::session_directory(session)?;
+    let path = directory.join("g3c-session-rebind.json");
+    let existing: Option<SessionRebind> = if path.exists() {
+        Some(g2d_real::read_private_json(&path)?)
+    } else {
+        None
+    };
+    let prior_messages = if let Some(record) = &existing {
+        let _ = rebound_binding(&root, &verified, record)?;
+        record.messages.clone()
+    } else {
+        verified_signatures(&verified)?
+    };
+    let prior_application_session = existing
+        .as_ref()
+        .map(|record| record.application_session_fingerprint.as_str())
+        .unwrap_or(root.application_session_fingerprint.as_str());
+
+    let (first, second) = read_unbound_pair(binary, owner)?;
+    if !first.observation.same_surface(&second.observation)
+        || !first.observation.same_messages(&second.observation)
+        || first.observation.draft_state != "EMPTY_HEURISTIC"
+        || first.observation.draft_text.as_deref() != Some("")
+        || second.observation.draft_state != "EMPTY_HEURISTIC"
+        || second.observation.draft_text.as_deref() != Some("")
+        || second.observation.conversation != root.conversation_fingerprint
+        || !valid_rebind_messages(&second.observation.messages)
+    {
+        return Err(HostError::Untrusted);
+    }
+    let overlap = longest_context_overlap(&prior_messages, &second.observation.messages);
+    if overlap < 2 {
+        return Err(HostError::Untrusted);
+    }
+    let changed = prior_application_session != second.observation.application_session;
+    let record = SessionRebind {
+        schema_version: 1,
+        root_application_session_fingerprint: root.application_session_fingerprint,
+        root_conversation_fingerprint: root.conversation_fingerprint,
+        application_session_fingerprint: second.observation.application_session,
+        conversation_fingerprint: second.observation.conversation,
+        messages: second.observation.messages,
+    };
+    g2d_real::write_private_json(&path, &record)?;
+    Ok(serde_json::json!({
+        "status": if changed { "APPLICATION_SESSION_REBOUND" } else { "APPLICATION_SESSION_ALREADY_CURRENT" },
+        "stable_two_reads": true,
+        "same_conversation": true,
+        "continuity_overlap": overlap,
+        "message_count": record.messages.len(),
+        "draft_empty": true,
+        "raw_text_included": false,
+        "model_requests": 0,
+        "write_operations": 0,
+        "send_operations": 0
+    }))
 }
 fn now_ms() -> Result<u64> {
     SystemTime::now()
@@ -352,6 +532,47 @@ mod tests {
         verified.application_session_fingerprint = baseline.application_session_fingerprint.clone();
         verified.messages.drain(..2);
         assert!(verified_binding(config, &baseline, &verified).is_err());
+    }
+
+    #[test]
+    fn explicit_restart_rebind_keeps_the_durable_target_and_requires_continuity() {
+        let (config, baseline, verified) = fixtures();
+        let root = verified_binding(config, &baseline, &verified).unwrap();
+        let mut restarted = verified.clone();
+        restarted.application_session_fingerprint = "d".repeat(64);
+        restarted.messages.remove(0);
+        restarted.messages.push(PrivateBridgeMessage {
+            text: "later message".into(),
+            direction: PrivateDirection::Them,
+            sender_fingerprint: None,
+            complete: true,
+        });
+        let record = SessionRebind {
+            schema_version: 1,
+            root_application_session_fingerprint: root.application_session_fingerprint.clone(),
+            root_conversation_fingerprint: root.conversation_fingerprint.clone(),
+            application_session_fingerprint: restarted.application_session_fingerprint.clone(),
+            conversation_fingerprint: restarted.conversation_fingerprint.clone(),
+            messages: verified_signatures(&restarted).unwrap(),
+        };
+        let rebound = rebound_binding(&root, &verified, &record).unwrap();
+        assert_eq!(rebound.binding.key, root.binding.key);
+        assert_eq!(rebound.application_session_fingerprint, "d".repeat(64));
+
+        let mut unrelated = record.clone();
+        unrelated.messages = vec![
+            MessageSignature {
+                digest: "e".repeat(64),
+                continuity_digest: Some("e".repeat(64)),
+                direction: "THEM".into(),
+                complete: true,
+            };
+            2
+        ];
+        assert!(rebound_binding(&root, &verified, &unrelated).is_err());
+        let mut wrong_conversation = record;
+        wrong_conversation.conversation_fingerprint = "f".repeat(64);
+        assert!(rebound_binding(&root, &verified, &wrong_conversation).is_err());
     }
 
     #[test]
