@@ -64,17 +64,6 @@ public enum VisionOCR {
     public static func recognize(_ image: CGImage, topLeftRegion: CGRect? = nil) throws -> OCRSnapshot {
         guard ImagePlan.accepts(width: image.width, height: image.height) else { throw OCRFailure.resourceLimit }
         return try autoreleasepool {
-            let request = VNRecognizeTextRequest()
-            request.revision = VNRecognizeTextRequestRevision3
-            request.recognitionLevel = .accurate
-            request.usesLanguageCorrection = false
-            request.automaticallyDetectsLanguage = false
-            request.minimumTextHeight = 0.006
-            request.preferBackgroundProcessing = true
-            let languages = ["zh-Hans", "en-US"]
-            let supported = try request.supportedRecognitionLanguages()
-            guard languages.allSatisfy({ supported.contains($0) }) else { throw OCRFailure.unsupportedLanguages }
-            request.recognitionLanguages = languages
             var visionRegion: CGRect?
             if let region = topLeftRegion {
                 let values = [region.minX, region.minY, region.width, region.height, region.maxX, region.maxY]
@@ -82,14 +71,48 @@ public enum VisionOCR {
                       region.minX >= 0, region.minY >= 0, region.maxX <= 1, region.maxY <= 1 else {
                     throw OCRFailure.invalidGeometry
                 }
-                let converted = CGRect(x: region.minX, y: 1 - region.maxY,
-                                       width: region.width, height: region.height)
-                request.regionOfInterest = converted
-                visionRegion = converted
+                visionRegion = CGRect(x: region.minX, y: 1 - region.maxY,
+                                      width: region.width, height: region.height)
             }
-            do { try VNImageRequestHandler(cgImage: image, orientation: .up, options: [:]).perform([request]) }
-            catch { throw OCRFailure.recognitionFailed }
-            guard let observations = request.results else { throw OCRFailure.recognitionFailed }
+
+            func configuredRequest() throws -> VNRecognizeTextRequest {
+                let request = VNRecognizeTextRequest()
+                request.revision = VNRecognizeTextRequestRevision3
+                request.recognitionLevel = .accurate
+                request.usesLanguageCorrection = false
+                request.automaticallyDetectsLanguage = false
+                request.minimumTextHeight = 0.006
+                request.preferBackgroundProcessing = true
+                let languages = ["zh-Hans", "en-US"]
+                let supported = try request.supportedRecognitionLanguages()
+                guard languages.allSatisfy({ supported.contains($0) }) else {
+                    throw OCRFailure.unsupportedLanguages
+                }
+                request.recognitionLanguages = languages
+                if let visionRegion { request.regionOfInterest = visionRegion }
+                return request
+            }
+
+            var observations: [VNRecognizedTextObservation]?
+            // Vision can transiently reject the first request immediately after model warmup.
+            // Retry once with a fresh request/handler; this remains a local, idempotent read.
+            for attempt in 0..<2 {
+                let request = try configuredRequest()
+                do {
+                    try VNImageRequestHandler(cgImage: image, orientation: .up, options: [:])
+                        .perform([request])
+                    if let results = request.results {
+                        observations = results
+                        break
+                    }
+                } catch {
+                    if attempt == 0 {
+                        Thread.sleep(forTimeInterval: 0.05)
+                        continue
+                    }
+                }
+            }
+            guard let observations else { throw OCRFailure.recognitionFailed }
             let candidates = observations.prefix(maxLines).compactMap { observation -> OCRLine? in
                 guard let first = observation.topCandidates(1).first else { return nil }
                 var box = observation.boundingBox
