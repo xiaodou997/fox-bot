@@ -31,6 +31,13 @@ class WorkerProcess:
                 os.killpg(self.process.pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
+            except PermissionError:
+                # Some supervised/test environments deny process-group signalling even
+                # though the direct child is still ours. Reap the child rather than leak it.
+                try:
+                    self.process.kill()
+                except ProcessLookupError:
+                    pass
         self.process.wait()
 
     def request(self, payload: dict, timeout: float) -> bytes:

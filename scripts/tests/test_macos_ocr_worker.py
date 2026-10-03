@@ -2,6 +2,7 @@ import json
 import sys
 import time
 import unittest
+from unittest import mock
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from macos_ocr_worker import WorkerProcess, safe_worker_reply
@@ -31,6 +32,17 @@ class OCRWorkerSupervisorTests(unittest.TestCase):
             worker.request({"id": "slow", "command": "warmup"}, 0.1)
         self.assertIsNotNone(worker.process.poll())
         worker.shutdown()
+
+    def test_permission_denied_group_kill_falls_back_to_direct_child_kill(self):
+        worker = WorkerProcess([sys.executable, "-u", "-c", "import time; time.sleep(10)"])
+        try:
+            with mock.patch("macos_ocr_worker.os.killpg", side_effect=PermissionError), \
+                    mock.patch.object(worker.process, "kill", wraps=worker.process.kill) as kill:
+                worker._terminate()
+                kill.assert_called_once_with()
+            self.assertIsNotNone(worker.process.poll())
+        finally:
+            worker.shutdown()
 
     def test_safe_warmup_reply_is_closed_and_bounded(self):
         raw = json.dumps({"id": "warmup", "status": "WARMED",
