@@ -2,7 +2,7 @@
 
 - 日期：2026-10-03
 - 基线：[G3c-2 真实 AI 回复](G3C2_REAL_REPLY.md)已在绑定测试私聊完成单条短回复闭环。
-- 当前状态：**IMPLEMENTED / OFFLINE PASS；真实微信多行回复验收待执行。**
+- 当前状态：**IMPLEMENTED / OFFLINE PASS；真实微信多行回复验收待执行。** 固定提交和门禁见[实现回执](../acceptance/receipts/2026-10-03-g3c3-multiline-readiness.md)。
 - 范围：macOS 微信、已绑定当前私聊、单条真实 incoming、单条纯文本回复。持续值守、多会话、附件和富文本不属于本增量。
 
 ## 1. 支持范围
