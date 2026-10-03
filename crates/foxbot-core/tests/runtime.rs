@@ -798,6 +798,30 @@ impl MessageChannel for FillErrorChannel {
     }
 }
 
+struct PreSendErrorChannel {
+    inner: MockChannel,
+    fail_once: bool,
+}
+
+impl MessageChannel for PreSendErrorChannel {
+    fn inspect(&mut self, target: &ConversationKey) -> Result<LiveTarget> {
+        self.inner.inspect(target)
+    }
+    fn fill(&mut self, action: &OutboundAction, expected: &LiveTarget) -> Result<()> {
+        self.inner.fill(action, expected)
+    }
+    fn send(&mut self, action: &OutboundAction, expected: &LiveTarget) -> Result<SendEvidence> {
+        if self.fail_once {
+            self.fail_once = false;
+            return Err(Error::Blocked("synthetic pre-send no-click result"));
+        }
+        self.inner.send(action, expected)
+    }
+    fn reconcile(&mut self, action: &OutboundAction) -> Result<SendEvidence> {
+        self.inner.reconcile(action)
+    }
+}
+
 #[test]
 fn explicit_filled_recovery_sends_once_without_refilling() {
     let (_dir, mut runtime, binding) = setup();
@@ -823,6 +847,40 @@ fn explicit_filled_recovery_sends_once_without_refilling() {
     assert!(
         runtime
             .recover_filled_send(&action_id, 3, &mut channel)
+            .is_err()
+    );
+}
+
+#[test]
+fn explicit_unattempted_recovery_requires_the_distinct_reason_and_sends_once() {
+    let (_dir, mut runtime, binding) = setup();
+    let action_id = prepared(&mut runtime, &binding.key);
+    let mut channel = PreSendErrorChannel {
+        inner: MockChannel::new(&binding.key),
+        fail_once: true,
+    };
+    assert_eq!(
+        runtime.dispatch(&action_id, 1, &mut channel).unwrap(),
+        ActionState::Unknown
+    );
+    assert_eq!(channel.inner.fill_calls, 1);
+    assert_eq!(channel.inner.send_calls, 0);
+    assert!(
+        runtime
+            .recover_filled_send(&action_id, 2, &mut channel)
+            .is_err()
+    );
+    assert_eq!(
+        runtime
+            .recover_unattempted_send(&action_id, 2, &mut channel)
+            .unwrap(),
+        ActionState::VerifiedOutgoing
+    );
+    assert_eq!(channel.inner.fill_calls, 1);
+    assert_eq!(channel.inner.send_calls, 1);
+    assert!(
+        runtime
+            .recover_unattempted_send(&action_id, 3, &mut channel)
             .is_err()
     );
 }

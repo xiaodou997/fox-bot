@@ -949,12 +949,47 @@ impl Runtime {
 
     /// Explicit recovery for a draft that was written but whose fill readback was uncertain.
     /// This never fills again, never bypasses target/draft checks and is bounded to the same
-    /// persisted action. Callers must additionally prove that no send receipt was created.
+    /// persisted action. Callers must prove that no external send side effect occurred.
     pub fn recover_filled_send<C: MessageChannel>(
         &mut self,
         action_id: &str,
         now_ms: u64,
         channel: &mut C,
+    ) -> Result<ActionState> {
+        self.recover_filled_send_for_reason(
+            action_id,
+            now_ms,
+            channel,
+            "fill_uncertain",
+            "filled_recovery_before_send",
+        )
+    }
+
+    /// Explicit recovery after a channel returned a trusted pre-send result proving that no
+    /// click/key action occurred. The caller must validate the persisted receipt and the
+    /// channel attempt report before using this entry point.
+    pub fn recover_unattempted_send<C: MessageChannel>(
+        &mut self,
+        action_id: &str,
+        now_ms: u64,
+        channel: &mut C,
+    ) -> Result<ActionState> {
+        self.recover_filled_send_for_reason(
+            action_id,
+            now_ms,
+            channel,
+            "effect_unconfirmed",
+            "unattempted_recovery_before_send",
+        )
+    }
+
+    fn recover_filled_send_for_reason<C: MessageChannel>(
+        &mut self,
+        action_id: &str,
+        now_ms: u64,
+        channel: &mut C,
+        expected_reason: &str,
+        transition_reason: &str,
     ) -> Result<ActionState> {
         const MAX_RECOVERY_AGE_MS: u64 = 1_800_000;
         let (action, state) = self.action(action_id)?;
@@ -963,7 +998,7 @@ impl Runtime {
             [action_id],
             |row| row.get(0),
         )?;
-        if state != ActionState::Unknown || reason.as_deref() != Some("fill_uncertain") {
+        if state != ActionState::Unknown || reason.as_deref() != Some(expected_reason) {
             return Err(Error::Stale);
         }
         let task = task(&self.conn, &action.request_id)?;
@@ -998,12 +1033,7 @@ impl Runtime {
         let tx = self
             .conn
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        transition(
-            &tx,
-            action_id,
-            ActionState::Executing,
-            "filled_recovery_before_send",
-        )?;
+        transition(&tx, action_id, ActionState::Executing, transition_reason)?;
         tx.commit()?;
         let evidence = channel
             .send(&action, &live)

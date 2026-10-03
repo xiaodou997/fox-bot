@@ -80,7 +80,8 @@ public struct NativeReadMessage: Encodable {
 public enum WeChatSendPolicy {
     public static let legacyEvidenceRevision = "WECHAT_RECEIPT_V3"
     public static let evidenceRevision = "WECHAT_RECEIPT_V4"
-    public static let controlRegion = CGRect(x: 0.86, y: 0.80, width: 0.14, height: 0.20)
+    /// Tight bottom-right crop keeps long composer text from suppressing the button label.
+    public static let controlRegion = CGRect(x: 0.90, y: 0.91, width: 0.10, height: 0.09)
     public static let shortUnicodeLimit = 80
     public static let maxTextUTF16 = 512
     public static let maxTextLines = 12
@@ -130,7 +131,7 @@ public enum WeChatSendPolicy {
     public static func sendButton(_ snapshot: OCRSnapshot?) -> SendPoint? {
         guard let snapshot, snapshot.statistics.completeRecognition else { return nil }
         let candidates = snapshot.lines.filter {
-            $0.confidence >= 0.8
+            $0.confidence >= 0.65
                 && ["发送", "Send"].contains($0.text.trimmingCharacters(in: .whitespacesAndNewlines))
                 && controlRegion.contains(CGPoint(x: $0.bounds.midX, y: $0.bounds.midY))
         }
@@ -196,25 +197,56 @@ public enum WeChatSendPolicy {
         )
     }
 
-    /// A new matching ME message after an unambiguous context overlap, not a delivery ACK.
-    public static func verifiedOutgoing(before: SendObservation, after: SendObservation, text: String) -> Bool {
+    private static func boundedEditDistance(
+        _ left: [Character],
+        _ right: [Character],
+        limit: Int
+    ) -> Int? {
+        guard abs(left.count - right.count) <= limit else { return nil }
+        var previous = Array(0...right.count)
+        for (row, lhs) in left.enumerated() {
+            var current = Array(repeating: 0, count: right.count + 1)
+            current[0] = row + 1
+            var minimum = current[0]
+            for (column, rhs) in right.enumerated() {
+                let substitution = previous[column] + (lhs == rhs ? 0 : 1)
+                current[column + 1] = min(
+                    previous[column + 1] + 1,
+                    current[column] + 1,
+                    substitution
+                )
+                minimum = min(minimum, current[column + 1])
+            }
+            guard minimum <= limit else { return nil }
+            previous = current
+        }
+        return previous[right.count] <= limit ? previous[right.count] : nil
+    }
+
+    /// Visual OCR is permitted at most two non-whitespace errors for long replies, after the
+    /// exact composer copy-readback has already succeeded. The ends must remain anchored.
+    public static func receiptTextMatches(expected: String, observed: String) -> Bool {
+        let expectedContent = Array(contentText(expected))
+        let observedContent = Array(contentText(observed))
+        if expectedContent == observedContent { return true }
+        guard usesPasteboardInput(expected), expectedContent.count >= 64,
+              abs(expectedContent.count - observedContent.count) <= 2,
+              expectedContent.prefix(8).elementsEqual(observedContent.prefix(8)),
+              expectedContent.suffix(8).elementsEqual(observedContent.suffix(8))
+        else { return false }
+        return boundedEditDistance(expectedContent, observedContent, limit: 2) != nil
+    }
+
+    private static func outgoingEnd(before: SendObservation, after: SendObservation) -> Int? {
         let supportedRevisions = [legacyEvidenceRevision, evidenceRevision]
         guard before.evidenceRevision.map(supportedRevisions.contains) == true,
               after.evidenceRevision.map(supportedRevisions.contains) == true,
               before.sameSurface(as: after), after.frontmost,
               after.draftState == .emptyHeuristic,
               before.messages.allSatisfy(\.complete), after.messages.allSatisfy(\.complete)
-        else { return false }
-        let expected = digest(text)
-        let expectedContent = digest(contentText(text))
-        let allowContentProjection = usesPasteboardInput(text)
-        let matches = { (message: SendMessageSignature) in
-            message.direction == "ME"
-                && (message.digest == expected
-                    || (allowContentProjection && message.contentDigest == expectedContent))
-        }
+        else { return nil }
         if before.messages.isEmpty {
-            return after.messages.count == 1 && matches(after.messages[0])
+            return after.messages.count == 1 ? 0 : nil
         }
 
         var candidates: [(start: Int, count: Int)] = []
@@ -233,15 +265,105 @@ public enum WeChatSendPolicy {
         }
         let valid = candidates.filter { after.messages.count - ($0.start + $0.count) == 1 }
         let ends = Set(valid.map { $0.start + $0.count })
-        guard ends.count == 1, let end = ends.first else { return false }
+        guard ends.count == 1, let end = ends.first else { return nil }
         let aligned = valid.filter { $0.start + $0.count == end }
         if aligned.count > 1, let longest = aligned.max(by: { $0.count < $1.count }) {
             let anchors = before.messages.suffix(longest.count)
             guard let first = anchors.first,
                   anchors.dropFirst().contains(where: { !first.sameContext(as: $0) })
-            else { return false }
+            else { return nil }
         }
+        return end
+    }
+
+    /// A new matching ME message after an unambiguous context overlap, not a delivery ACK.
+    public static func verifiedOutgoing(before: SendObservation, after: SendObservation, text: String) -> Bool {
+        guard let end = outgoingEnd(before: before, after: after) else { return false }
+        let expected = digest(text)
+        let expectedContent = digest(contentText(text))
+        let allowContentProjection = usesPasteboardInput(text)
         let added = after.messages.dropFirst(end)
-        return added.filter(matches).count == 1
+        guard added.count == 1, let message = added.first, message.direction == "ME" else {
+            return false
+        }
+        return message.digest == expected
+            || (allowContentProjection && message.contentDigest == expectedContent)
+    }
+
+    private static func fuzzyOutgoingEnd(before: SendObservation, after: SendObservation) -> Int? {
+        let supportedRevisions = [legacyEvidenceRevision, evidenceRevision]
+        guard before.evidenceRevision.map(supportedRevisions.contains) == true,
+              after.evidenceRevision.map(supportedRevisions.contains) == true,
+              before.sameSurface(as: after), after.frontmost,
+              after.draftState == .emptyHeuristic,
+              before.messages.allSatisfy(\.complete), after.messages.allSatisfy(\.complete)
+        else { return nil }
+        if before.messages.isEmpty {
+            return (1...3).contains(after.messages.count) ? 0 : nil
+        }
+
+        var candidates: [(end: Int, count: Int)] = []
+        for start in after.messages.indices {
+            let upper = min(before.messages.count, after.messages.count - start)
+            guard upper >= 2 else { continue }
+            for count in stride(from: upper, through: 2, by: -1) {
+                let trailing = after.messages.count - (start + count)
+                guard (1...3).contains(trailing) else { continue }
+                let left = Array(before.messages.suffix(count))
+                let right = Array(after.messages[start..<(start + count)])
+                var mismatch = -1
+                var valid = true
+                for index in left.indices where !left[index].sameContext(as: right[index]) {
+                    if mismatch >= 0 {
+                        valid = false
+                        break
+                    }
+                    mismatch = index
+                }
+                if mismatch >= 0 {
+                    let index = mismatch
+                    valid = valid && count >= 5 && index == count - 1
+                        && left[index].direction == "THEM"
+                        && right[index].direction == "THEM"
+                        && left[index].complete && right[index].complete
+                }
+                if valid {
+                    candidates.append((start + count, count))
+                    break
+                }
+            }
+        }
+        let ends = Set(candidates.map(\.end))
+        guard ends.count == 1, let end = ends.first else { return nil }
+        let aligned = candidates.filter { $0.end == end }
+        if aligned.count > 1, let longest = aligned.max(by: { $0.count < $1.count }) {
+            let anchors = before.messages.suffix(longest.count)
+            guard let first = anchors.first,
+                  anchors.dropFirst().contains(where: { !first.sameContext(as: $0) })
+            else { return nil }
+        }
+        return end
+    }
+
+    /// Private raw text is used only inside the native worker to tolerate bounded OCR errors.
+    public static func verifiedOutgoing(
+        before: SendObservation,
+        after: SendObservation,
+        rawAfter: OCRSnapshot,
+        text: String
+    ) -> Bool {
+        if verifiedOutgoing(before: before, after: after, text: text) { return true }
+        guard usesPasteboardInput(text),
+              let end = fuzzyOutgoingEnd(before: before, after: after),
+              (1...3).contains(after.messages.count - end),
+              rawAfter.statistics.completeRecognition
+        else { return false }
+        let parsed = parsedMessages(rawAfter)
+        guard parsed.count == after.messages.count,
+              parsed[end].direction == .me,
+              parsed[end...].allSatisfy({ $0.direction != .unknown })
+        else { return false }
+        let observed = parsed[end...].map(\.text).joined(separator: "\n")
+        return receiptTextMatches(expected: text, observed: observed)
     }
 }

@@ -38,10 +38,10 @@ def fingerprint():
     return digest.hexdigest()
 
 
-TEST_MINIMUMS = {"rust-tests": 188, "cipher-disabled": 1, "python-tests": 61, "swift-tests": 123}
+TEST_MINIMUMS = {"rust-tests": 191, "cipher-disabled": 1, "python-tests": 61, "swift-tests": 124}
 
 
-TEST_MINIMUMS.update({'local-reply-tests': 17, 'settings-tests': 10})
+TEST_MINIMUMS.update({'local-reply-tests': 18, 'settings-tests': 10})
 
 def executed_tests(label, log):
     """Count terminal success summaries, not the number of test functions in source."""

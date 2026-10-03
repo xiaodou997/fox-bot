@@ -66,7 +66,8 @@ public enum WeChatMessageParser {
 
     public static func direction(x: CGFloat, width: CGFloat) -> MessageDirection {
         let right = x + width
-        if x >= 0.66 || (x >= 0.50 && right >= 0.80) { return .me }
+        if x >= 0.66 || (x >= 0.50 && right >= 0.80)
+            || (x >= 0.42 && right >= 0.90) { return .me }
         if x <= 0.50 && right < 0.80 { return .them }
         return .unknown
     }

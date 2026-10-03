@@ -22,7 +22,7 @@ use std::{
 
 const LEGACY_RECEIPT_REVISION: &str = "WECHAT_RECEIPT_V3";
 const RECEIPT_REVISION: &str = "WECHAT_RECEIPT_V4";
-const WORKER_SCHEMA: &str = "foxbot.native-send-worker.v5";
+const WORKER_SCHEMA: &str = "foxbot.native-send-worker.v6";
 const SHORT_UNICODE_LIMIT: usize = 80;
 pub(crate) const MAX_SEND_UTF16: usize = 512;
 pub(crate) const MAX_SEND_LINES: usize = 12;
@@ -285,7 +285,10 @@ impl Worker {
             serde_json::from_slice(&data).map_err(|_| HostError::NativeWorker)?;
         if reply.schema_version != WORKER_SCHEMA
             || reply.id != id
-            || (!matches!(command, "read" | "recover_read") && reply.messages.is_some())
+            || (!matches!(
+                command,
+                "read" | "recover_read" | "send" | "recover_send" | "reconcile"
+            ) && reply.messages.is_some())
             || (command != "fill" && reply.write_attempted)
             || (!matches!(command, "send" | "recover_send") && reply.send_attempted)
             || (reply.verified_outgoing
@@ -312,12 +315,10 @@ impl Drop for Worker {
     }
 }
 
-fn read_frame(reply: WorkerReply) -> Result<NativeReadFrame> {
-    if reply.status != "OBSERVED" {
-        return Err(HostError::Untrusted);
-    }
-    let observation = reply.observation.ok_or(HostError::Untrusted)?;
-    let messages = reply.messages.ok_or(HostError::Untrusted)?;
+fn validate_message_projection(
+    observation: &NativeSendObservation,
+    messages: &[NativeReadMessage],
+) -> Result<()> {
     if !observation.frontmost
         || !observation.conversation_resolved
         || messages.len() != observation.messages.len()
@@ -342,6 +343,16 @@ fn read_frame(reply: WorkerReply) -> Result<NativeReadFrame> {
     {
         return Err(HostError::Untrusted);
     }
+    Ok(())
+}
+
+fn read_frame(reply: WorkerReply) -> Result<NativeReadFrame> {
+    if reply.status != "OBSERVED" {
+        return Err(HostError::Untrusted);
+    }
+    let observation = reply.observation.ok_or(HostError::Untrusted)?;
+    let messages = reply.messages.ok_or(HostError::Untrusted)?;
+    validate_message_projection(&observation, &messages)?;
     Ok(NativeReadFrame {
         observation,
         messages,
@@ -369,6 +380,45 @@ pub(crate) fn supported_send_text(value: &str) -> bool {
 
 fn uses_content_projection(value: &str) -> bool {
     value.contains('\n') || value.encode_utf16().count() > SHORT_UNICODE_LIMIT
+}
+
+fn bounded_edit_distance(left: &[char], right: &[char], limit: usize) -> Option<usize> {
+    if left.len().abs_diff(right.len()) > limit {
+        return None;
+    }
+    let mut previous: Vec<usize> = (0..=right.len()).collect();
+    for (row, lhs) in left.iter().enumerate() {
+        let mut current = vec![0; right.len() + 1];
+        current[0] = row + 1;
+        let mut minimum = current[0];
+        for (column, rhs) in right.iter().enumerate() {
+            let substitution = previous[column] + usize::from(lhs != rhs);
+            current[column + 1] = (previous[column + 1] + 1)
+                .min(current[column] + 1)
+                .min(substitution);
+            minimum = minimum.min(current[column + 1]);
+        }
+        if minimum > limit {
+            return None;
+        }
+        previous = current;
+    }
+    (previous[right.len()] <= limit).then_some(previous[right.len()])
+}
+
+fn receipt_text_matches(expected: &str, observed: &str) -> bool {
+    let expected_content: Vec<char> = content_text(expected).chars().collect();
+    let observed_content: Vec<char> = content_text(observed).chars().collect();
+    if expected_content == observed_content {
+        return true;
+    }
+    uses_content_projection(expected)
+        && expected_content.len() >= 64
+        && expected_content.len().abs_diff(observed_content.len()) <= 2
+        && expected_content[..8] == observed_content[..8]
+        && expected_content[expected_content.len() - 8..]
+            == observed_content[observed_content.len() - 8..]
+        && bounded_edit_distance(&expected_content, &observed_content, 2).is_some()
 }
 
 /// Read two stable current frames before an operator-confirmed application-session rebind.
@@ -404,6 +454,29 @@ struct ReceiptContext {
     action_id: String,
     text_digest: String,
     before: NativeSendObservation,
+}
+
+pub(crate) fn validate_unattempted_receipt(
+    path: &Path,
+    action: &OutboundAction,
+    binding: &NativeConversationBinding,
+) -> Result<()> {
+    let context: ReceiptContext = g2d_real::read_private_json(path)?;
+    context.before.validate()?;
+    if context.action_id != action.action_id
+        || context.text_digest != format!("{:x}", Sha256::digest(action.text.as_bytes()))
+        || action.target != binding.binding.key
+        || !context.before.matches_binding(binding)
+        || !context.before.frontmost
+        || !context.before.conversation_resolved
+        || context.before.draft_state != "NONEMPTY"
+        || context.before.draft_text.is_some()
+        || context.before.send_button.is_some()
+        || context.before.evidence_revision.as_deref() != Some(RECEIPT_REVISION)
+    {
+        return Err(HostError::Untrusted);
+    }
+    Ok(())
 }
 
 pub struct NativeSendChannel<'a> {
@@ -546,11 +619,7 @@ impl<'a> NativeSendChannel<'a> {
         Ok(observation.clone())
     }
 }
-fn matching_outgoing(
-    before: &NativeSendObservation,
-    after: &NativeSendObservation,
-    text: &str,
-) -> bool {
+fn outgoing_end(before: &NativeSendObservation, after: &NativeSendObservation) -> Option<usize> {
     let revision_supported =
         |value: Option<&str>| matches!(value, Some(LEGACY_RECEIPT_REVISION | RECEIPT_REVISION));
     if !revision_supported(before.evidence_revision.as_deref())
@@ -564,19 +633,10 @@ fn matching_outgoing(
             .chain(&after.messages)
             .any(|message| !message.complete)
     {
-        return false;
+        return None;
     }
-    let digest = format!("{:x}", Sha256::digest(text.as_bytes()));
-    let content_digest = format!("{:x}", Sha256::digest(content_text(text).as_bytes()));
-    let content_projection = uses_content_projection(text);
-    let matched = |message: &MessageSignature| {
-        message.direction == "ME"
-            && (message.digest == digest
-                || (content_projection
-                    && message.content_digest.as_deref() == Some(content_digest.as_str())))
-    };
     if before.messages.is_empty() {
-        return after.messages.len() == 1 && matched(&after.messages[0]);
+        return (after.messages.len() == 1).then_some(0);
     }
 
     let mut valid: Vec<(usize, usize)> = Vec::new();
@@ -598,31 +658,145 @@ fn matching_outgoing(
             }
         }
     }
-    let Some(end) = valid.first().map(|(start, count)| start + count) else {
-        return false;
-    };
+    let end = valid.first().map(|(start, count)| start + count)?;
     if valid.iter().any(|(start, count)| start + count != end) {
-        return false;
+        return None;
     }
     if valid.len() > 1 {
         let longest = valid.iter().map(|(_, count)| *count).max().unwrap_or(0);
         let anchors = &before.messages[before.messages.len() - longest..];
-        let Some(first) = anchors.first() else {
-            return false;
-        };
+        let first = anchors.first()?;
         if !anchors
             .iter()
             .skip(1)
             .any(|message| !first.same_context(message))
         {
-            return false;
+            return None;
         }
     }
-    after.messages[end..]
+    Some(end)
+}
+
+fn fuzzy_outgoing_end(
+    before: &NativeSendObservation,
+    after: &NativeSendObservation,
+) -> Option<usize> {
+    let revision_supported =
+        |value: Option<&str>| matches!(value, Some(LEGACY_RECEIPT_REVISION | RECEIPT_REVISION));
+    if !revision_supported(before.evidence_revision.as_deref())
+        || !revision_supported(after.evidence_revision.as_deref())
+        || !before.same_surface(after)
+        || !after.frontmost
+        || after.draft_state != "EMPTY_HEURISTIC"
+        || before
+            .messages
+            .iter()
+            .chain(&after.messages)
+            .any(|message| !message.complete)
+    {
+        return None;
+    }
+    if before.messages.is_empty() {
+        return (1..=3).contains(&after.messages.len()).then_some(0);
+    }
+
+    let mut candidates: Vec<(usize, usize)> = Vec::new();
+    for start in 0..after.messages.len() {
+        let upper = before.messages.len().min(after.messages.len() - start);
+        if upper < 2 {
+            continue;
+        }
+        for count in (2..=upper).rev() {
+            let trailing = after.messages.len() - (start + count);
+            if !(1..=3).contains(&trailing) {
+                continue;
+            }
+            let left = &before.messages[before.messages.len() - count..];
+            let right = &after.messages[start..start + count];
+            let mismatches: Vec<_> = left
+                .iter()
+                .zip(right)
+                .enumerate()
+                .filter_map(|(index, (left, right))| (!left.same_context(right)).then_some(index))
+                .collect();
+            let valid = mismatches.is_empty()
+                || (mismatches.len() == 1
+                    && count >= 5
+                    && mismatches[0] == count - 1
+                    && left[count - 1].direction == "THEM"
+                    && right[count - 1].direction == "THEM"
+                    && left[count - 1].complete
+                    && right[count - 1].complete);
+            if valid {
+                candidates.push((start + count, count));
+                break;
+            }
+        }
+    }
+    let end = candidates.first().map(|(end, _)| *end)?;
+    if candidates.iter().any(|(candidate, _)| *candidate != end) {
+        return None;
+    }
+    if candidates.len() > 1 {
+        let longest = candidates
+            .iter()
+            .map(|(_, count)| *count)
+            .max()
+            .unwrap_or(0);
+        let anchors = &before.messages[before.messages.len() - longest..];
+        let first = anchors.first()?;
+        if !anchors
+            .iter()
+            .skip(1)
+            .any(|message| !first.same_context(message))
+        {
+            return None;
+        }
+    }
+    Some(end)
+}
+
+fn matching_outgoing(
+    before: &NativeSendObservation,
+    after: &NativeSendObservation,
+    text: &str,
+    raw_messages: Option<&[NativeReadMessage]>,
+) -> bool {
+    let digest = format!("{:x}", Sha256::digest(text.as_bytes()));
+    let content_digest = format!("{:x}", Sha256::digest(content_text(text).as_bytes()));
+    let content_projection = uses_content_projection(text);
+    if let Some(end) = outgoing_end(before, after)
+        && after.messages.len() == end + 1
+        && after.messages[end].direction == "ME"
+        && (after.messages[end].digest == digest
+            || (content_projection
+                && after.messages[end].content_digest.as_deref() == Some(content_digest.as_str())))
+    {
+        return true;
+    }
+    let Some(messages) = raw_messages else {
+        return false;
+    };
+    let Some(end) = fuzzy_outgoing_end(before, after) else {
+        return false;
+    };
+    let trailing = after.messages.len() - end;
+    if !content_projection
+        || !(1..=3).contains(&trailing)
+        || messages.len() != after.messages.len()
+        || messages[end].direction != "ME"
+        || messages[end..]
+            .iter()
+            .any(|message| !message.complete || message.direction == "UNKNOWN")
+    {
+        return false;
+    }
+    let observed = messages[end..]
         .iter()
-        .filter(|message| matched(message))
-        .count()
-        == 1
+        .map(|message| message.text.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    receipt_text_matches(text, &observed)
 }
 
 fn channel_error(_: HostError) -> foxbot_core::Error {
@@ -697,15 +871,17 @@ impl MessageChannel for NativeSendChannel<'_> {
             .worker
             .request(command, Some(&before), Some(action))
             .map_err(channel_error)?;
+        if let (Some(after), Some(messages)) = (&reply.observation, &reply.messages) {
+            validate_message_projection(after, messages).map_err(channel_error)?;
+        }
         self.stats.send_attempted = Some(reply.send_attempted);
         self.stats.last_status = reply.status;
         if self.stats.last_status == "VERIFIED_OUTGOING"
             && reply.send_attempted
             && reply.verified_outgoing
-            && reply
-                .observation
-                .as_ref()
-                .is_some_and(|after| matching_outgoing(&before, after, &action.text))
+            && reply.observation.as_ref().is_some_and(|after| {
+                matching_outgoing(&before, after, &action.text, reply.messages.as_deref())
+            })
         {
             Ok(SendEvidence::ObservedOutgoing {
                 action_id: action.action_id.clone(),
@@ -729,13 +905,20 @@ impl MessageChannel for NativeSendChannel<'_> {
             .worker
             .request("reconcile", Some(&context.before), Some(action))
             .map_err(channel_error)?;
+        if let (Some(after), Some(messages)) = (&reply.observation, &reply.messages) {
+            validate_message_projection(after, messages).map_err(channel_error)?;
+        }
         self.stats.last_status = reply.status;
         if self.stats.last_status == "VERIFIED_OUTGOING"
             && reply.verified_outgoing
-            && reply
-                .observation
-                .as_ref()
-                .is_some_and(|after| matching_outgoing(&context.before, after, &action.text))
+            && reply.observation.as_ref().is_some_and(|after| {
+                matching_outgoing(
+                    &context.before,
+                    after,
+                    &action.text,
+                    reply.messages.as_deref(),
+                )
+            })
         {
             Ok(SendEvidence::ObservedOutgoing {
                 action_id: action.action_id.clone(),

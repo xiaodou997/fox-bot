@@ -13,7 +13,7 @@ private struct Request: Decodable {
 }
 
 private struct Reply: Encodable {
-    let schemaVersion = "foxbot.native-send-worker.v5"
+    let schemaVersion = "foxbot.native-send-worker.v6"
     let id: UInt64
     var status: String
     var observation: SendObservation?
@@ -256,7 +256,10 @@ struct SendMain {
                           current.evidenceRevision.map(supportedRevisions.contains) == true
                     else { throw Failure.receiptRevisionMismatch }
                     if request.command == "reconcile" {
-                        reply.verifiedOutgoing = WeChatSendPolicy.verifiedOutgoing(before: expected, after: current, text: text)
+                        reply.messages = WeChatSendPolicy.readMessages(raw.chatSnapshot)
+                        reply.verifiedOutgoing = WeChatSendPolicy.verifiedOutgoing(
+                            before: expected, after: current, rawAfter: raw.chatSnapshot, text: text
+                        )
                         reply.status = reply.verifiedOutgoing ? "VERIFIED_OUTGOING" : "UNKNOWN"
                     } else if request.command == "fill" {
                         guard allowWrite else { throw Failure.invalidRequest }
@@ -309,9 +312,13 @@ struct SendMain {
                         reply.status = "UNKNOWN"
                         for _ in 0..<6 {
                             try await Task.sleep(nanoseconds: 500_000_000)
-                            let (_, after) = try await capture()
+                            let (afterRaw, after) = try await capture()
                             reply.observation = after
-                            if WeChatSendPolicy.verifiedOutgoing(before: before, after: after, text: text) {
+                            reply.messages = WeChatSendPolicy.readMessages(afterRaw.chatSnapshot)
+                            if WeChatSendPolicy.verifiedOutgoing(
+                                before: before, after: after,
+                                rawAfter: afterRaw.chatSnapshot, text: text
+                            ) {
                                 reply.verifiedOutgoing = true
                                 reply.status = "VERIFIED_OUTGOING"
                                 break

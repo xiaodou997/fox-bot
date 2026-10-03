@@ -67,7 +67,8 @@ fn worker(path: &Path, mode: &str) -> PathBuf {
 import pathlib,json,sys,hashlib
 root=pathlib.Path(__file__).parent
 allow='--allow-single-send' in sys.argv
-draft=''
+draft_path=root/'draft.txt'
+draft=draft_path.read_text() if draft_path.exists() else ''
 marker=root/'sent.json'
 def data():
     rows=json.loads((root/'messages.json').read_text())
@@ -79,21 +80,26 @@ def observation(rows):
         return dict(digest=hashlib.sha256(m['text'].encode()).hexdigest(),continuity_digest=hashlib.sha256(m['text'].encode()).hexdigest(),content_digest=hashlib.sha256(content.encode()).hexdigest(),direction=m['direction'],complete=m['complete'])
     return {'application_session':'c'*64,'conversation':'a'*64,'window_ref':'1','layout_ref':'d'*64,
         'frontmost':True,'conversation_resolved':True,'draft_state':'NONEMPTY' if draft else 'EMPTY_HEURISTIC',
-        'draft_text':draft,'send_button':{'x':.94,'y':.94},'evidence_revision':'WECHAT_RECEIPT_V4',
+        'draft_text':draft,'send_button':None if MODE=='button-unavailable' and draft else {'x':.94,'y':.94},'evidence_revision':'WECHAT_RECEIPT_V4',
         'messages':[signature(m) for m in rows]}
 for line in sys.stdin:
     q=json.loads(line); cmd=q['command']
-    r={'schema_version':'foxbot.native-send-worker.v5','id':q['id'],'status':'OBSERVED',
+    r={'schema_version':'foxbot.native-send-worker.v6','id':q['id'],'status':'OBSERVED',
        'write_attempted':False,'send_attempted':False,'verified_outgoing':False}
     if cmd=='warmup': r['status']='WARMED'
     else:
         if cmd=='fill':
             assert allow
-            draft=q['text'];r.update(status='FILLED',write_attempted=True)
+            draft=q['text'];draft_path.write_text(draft);r.update(status='FILLED',write_attempted=True)
         elif cmd in ('send','recover_send'):
-            assert allow and not marker.exists()
-            marker.write_text(json.dumps({'text':q['text']}));draft=''
-            r.update(status='UNKNOWN' if MODE=='unknown' else 'VERIFIED_OUTGOING',send_attempted=True,verified_outgoing=MODE!='unknown')
+            assert allow
+            if MODE=='button-unavailable':
+                r.update(status='SEND_BUTTON_UNAVAILABLE',send_attempted=False)
+            else:
+                assert not marker.exists()
+                marker.write_text(json.dumps({'text':q['text']}));draft=''
+                if draft_path.exists(): draft_path.unlink()
+                r.update(status='UNKNOWN' if MODE=='unknown' else 'VERIFIED_OUTGOING',send_attempted=True,verified_outgoing=MODE!='unknown')
         elif cmd=='reconcile':
             assert not allow
             r.update(status='VERIFIED_OUTGOING',verified_outgoing=True)
@@ -332,6 +338,51 @@ async fn unknown_send_reconciles_readonly_without_regenerating() {
     assert_eq!(result["native"]["send_requests"], 0);
     assert_eq!(result["native"]["reconcile_requests"], 1);
     assert_eq!(server.state.lock().unwrap().seen.len(), 1);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn explicit_no_click_report_recovers_existing_draft_without_regeneration_or_refill() {
+    let server = Server::start().await;
+    let mut fixture = Fixture::new(&server, false, "button-unavailable");
+    messages(fixture.dir.path(), &[("question", "THEM")]);
+    let first = fixture.execute(CancellationToken::new()).await;
+    assert_eq!(first["action_state"], "UNKNOWN");
+    assert_eq!(first["model_jobs_this_invocation"], 1);
+    assert_eq!(first["native"]["fill_requests"], 1);
+    assert_eq!(first["native"]["send_requests"], 1);
+    assert_eq!(first["native"]["send_attempted"], false);
+    assert!(!fixture.dir.path().join("sent.json").exists());
+    assert!(confirmed_unattempted_send(fixture.dir.path()).unwrap());
+
+    let action_id = fixture.state.action_id.clone().unwrap();
+    let (action, action_state) = fixture.runtime.action(&action_id).unwrap();
+    assert_eq!(action_state, ActionState::Unknown);
+    let receipt = fixture.dir.path().join("receipt.json");
+    validate_unattempted_receipt(&receipt, &action, &fixture.state.binding).unwrap();
+
+    fixture.binary = worker(fixture.dir.path(), "ok");
+    let mut channel = NativeSendChannel::start_filled_recovery(
+        &fixture.binary,
+        fixture.state.binding.clone(),
+        &fixture.owner,
+        receipt,
+        &action,
+    )
+    .unwrap();
+    assert_eq!(
+        fixture
+            .runtime
+            .recover_unattempted_send(&action_id, RunClock::default().now_ms(), &mut channel)
+            .unwrap(),
+        ActionState::VerifiedOutgoing
+    );
+    assert_eq!(channel.stats.fill_requests, 0);
+    assert_eq!(channel.stats.send_requests, 1);
+    assert_eq!(channel.stats.send_attempted, Some(true));
+    assert_eq!(server.state.lock().unwrap().seen.len(), 1);
+    let sent: serde_json::Value =
+        serde_json::from_slice(&fs::read(fixture.dir.path().join("sent.json")).unwrap()).unwrap();
+    assert_eq!(sent["text"], action.text);
 }
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn interrupted_generation_claim_never_starts_a_second_model_request() {

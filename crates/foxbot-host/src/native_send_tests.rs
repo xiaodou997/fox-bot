@@ -66,7 +66,7 @@ def observe():
 for line in sys.stdin:
     req = json.loads(line)
     cmd = req['command']
-    result = {'schema_version': 'foxbot.native-send-worker.v5', 'id': req['id'], 'status': 'OBSERVED',
+    result = {'schema_version': 'foxbot.native-send-worker.v6', 'id': req['id'], 'status': 'OBSERVED',
               'write_attempted': False, 'send_attempted': False, 'verified_outgoing': False}
     if MODE == 'bad-id':
         result['id'] += 1
@@ -335,10 +335,10 @@ fn context_signature_can_ignore_spacing_without_relaxing_exact_outgoing_digest()
         )),
     });
     assert!(!before.same_messages(&after));
-    assert!(matching_outgoing(&before, &after, text));
-    assert!(!matching_outgoing(&before, &after, "回复42"));
+    assert!(matching_outgoing(&before, &after, text, None));
+    assert!(!matching_outgoing(&before, &after, "回复42", None));
     after.messages[0].continuity_digest = Some("f".repeat(64));
-    assert!(!matching_outgoing(&before, &after, text));
+    assert!(!matching_outgoing(&before, &after, text, None));
 }
 
 #[test]
@@ -382,14 +382,144 @@ fn long_multiline_receipt_handles_visual_wrap_and_revealed_older_history() {
         signature("anchor-c", "ME"),
         signature(wrapped, "ME"),
     ];
-    assert!(matching_outgoing(&before, &after, expected));
+    assert!(matching_outgoing(&before, &after, expected, None));
     assert!(!matching_outgoing(
         &before,
         &after,
-        &expected.replace("创新", "创业")
+        &expected.replace("创新", "创业"),
+        None,
     ));
     before.evidence_revision = Some(LEGACY_RECEIPT_REVISION.into());
-    assert!(matching_outgoing(&before, &after, expected));
+    assert!(matching_outgoing(&before, &after, expected, None));
+}
+
+#[test]
+fn long_receipt_accepts_two_bounded_ocr_errors_only_with_raw_private_evidence() {
+    fn signature(text: &str, direction: &str) -> MessageSignature {
+        MessageSignature {
+            digest: format!("{:x}", Sha256::digest(text.as_bytes())),
+            direction: direction.into(),
+            complete: true,
+            continuity_digest: Some(format!(
+                "{:x}",
+                Sha256::digest(crate::native_bridge::continuity_text(text).as_bytes())
+            )),
+            content_digest: Some(format!(
+                "{:x}",
+                Sha256::digest(content_text(text).as_bytes())
+            )),
+        }
+    }
+    let expected: String = (0..100)
+        .map(|offset| char::from_u32(0x4E00 + offset).unwrap())
+        .collect();
+    let mut observed: Vec<char> = expected.chars().collect();
+    observed.remove(20);
+    observed[55] = '甲';
+    let observed: String = observed.into_iter().collect();
+    assert!(receipt_text_matches(&expected, &observed));
+
+    let mut before = NativeSendObservation {
+        application_session: "c".repeat(64),
+        conversation: "a".repeat(64),
+        window_ref: "1".into(),
+        layout_ref: "d".repeat(64),
+        frontmost: true,
+        conversation_resolved: true,
+        draft_state: "NONEMPTY".into(),
+        draft_text: Some(expected.clone()),
+        messages: vec![signature("anchor-b", "THEM"), signature("anchor-c", "ME")],
+        send_button: None,
+        evidence_revision: Some(RECEIPT_REVISION.into()),
+    };
+    let mut after = before.clone();
+    after.draft_state = "EMPTY_HEURISTIC".into();
+    after.draft_text = Some(String::new());
+    after.messages.push(signature(&observed, "ME"));
+    let raw = vec![
+        NativeReadMessage {
+            text: "anchor-b".into(),
+            direction: "THEM".into(),
+            complete: true,
+        },
+        NativeReadMessage {
+            text: "anchor-c".into(),
+            direction: "ME".into(),
+            complete: true,
+        },
+        NativeReadMessage {
+            text: observed.clone(),
+            direction: "ME".into(),
+            complete: true,
+        },
+    ];
+    assert!(!matching_outgoing(&before, &after, &expected, None));
+    assert!(matching_outgoing(&before, &after, &expected, Some(&raw)));
+
+    let anchors: Vec<_> = (0..7)
+        .map(|index| {
+            signature(
+                &format!("anchor-{index}"),
+                if index % 2 == 0 { "THEM" } else { "ME" },
+            )
+        })
+        .collect();
+    let mut split_before = before.clone();
+    split_before.messages = anchors.clone();
+    split_before.messages[6].direction = "THEM".into();
+    let observed_chars: Vec<char> = observed.chars().collect();
+    let first_part: String = observed_chars[..80].iter().collect();
+    let second_part: String = observed_chars[80..].iter().collect();
+    let mut split_after = split_before.clone();
+    split_after.draft_state = "EMPTY_HEURISTIC".into();
+    split_after.draft_text = Some(String::new());
+    split_after.messages = anchors[1..6].to_vec();
+    split_after
+        .messages
+        .push(signature("changed-trigger", "THEM"));
+    split_after.messages.push(signature(&first_part, "ME"));
+    split_after.messages.push(signature(&second_part, "THEM"));
+    let mut split_raw: Vec<_> = (1..6)
+        .map(|index| NativeReadMessage {
+            text: format!("anchor-{index}"),
+            direction: if index % 2 == 0 {
+                "THEM".into()
+            } else {
+                "ME".into()
+            },
+            complete: true,
+        })
+        .collect();
+    split_raw.push(NativeReadMessage {
+        text: "changed-trigger".into(),
+        direction: "THEM".into(),
+        complete: true,
+    });
+    split_raw.push(NativeReadMessage {
+        text: first_part,
+        direction: "ME".into(),
+        complete: true,
+    });
+    split_raw.push(NativeReadMessage {
+        text: second_part,
+        direction: "THEM".into(),
+        complete: true,
+    });
+    assert!(matching_outgoing(
+        &split_before,
+        &split_after,
+        &expected,
+        Some(&split_raw),
+    ));
+
+    let mut too_many: Vec<char> = observed.chars().collect();
+    too_many[70] = '乙';
+    assert!(!receipt_text_matches(
+        &expected,
+        &too_many.into_iter().collect::<String>()
+    ));
+    before.evidence_revision = Some(LEGACY_RECEIPT_REVISION.into());
+    assert!(!matching_outgoing(&before, &after, &expected, None));
 }
 
 #[test]

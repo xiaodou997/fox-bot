@@ -25,6 +25,8 @@ final class MessageParserTests: XCTestCase {
         XCTAssertEqual(WeChatMessageParser.direction(x: 0.38, width: 0.20), .them)
         XCTAssertEqual(WeChatMessageParser.direction(x: 0.53, width: 0.15), .unknown)
         XCTAssertEqual(WeChatMessageParser.direction(x: 0.52, width: 0.31), .me)
+        XCTAssertEqual(WeChatMessageParser.direction(x: 0.45, width: 0.47), .me)
+        XCTAssertEqual(WeChatMessageParser.direction(x: 0.45, width: 0.42), .unknown)
     }
 
     func testReadRegionIncludesTopTitleWhileChatRegionExcludesHeader() {

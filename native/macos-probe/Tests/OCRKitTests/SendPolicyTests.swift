@@ -187,15 +187,43 @@ final class SendPolicyTests: XCTestCase {
             text: expected.replacingOccurrences(of: "创新", with: "创业")
         ))
     }
+    func testLongReceiptAllowsTwoBoundedOCRErrorsButNotThreeOrChangedEnds() {
+        let expected = (0..<100).compactMap { UnicodeScalar(0x4E00 + $0) }.map(String.init).joined()
+        var observed = Array(expected)
+        observed.remove(at: 20)
+        observed[55] = "甲"
+        XCTAssertTrue(WeChatSendPolicy.receiptTextMatches(
+            expected: expected,
+            observed: String(observed)
+        ))
+        observed[70] = "乙"
+        XCTAssertFalse(WeChatSendPolicy.receiptTextMatches(
+            expected: expected,
+            observed: String(observed)
+        ))
+        var changedStart = Array(expected)
+        changedStart[0] = "丙"
+        XCTAssertFalse(WeChatSendPolicy.receiptTextMatches(
+            expected: expected,
+            observed: String(changedStart)
+        ))
+        XCTAssertFalse(WeChatSendPolicy.receiptTextMatches(
+            expected: "短文本需要精确匹配",
+            observed: "短文本需精确匹配"
+        ))
+    }
+
     func testSendButtonRequiresUniqueLabelWithinControlArea() {
         func ocr(_ lines: [OCRLine]) -> OCRSnapshot {
             OCRSnapshot(lines: lines, statistics: OCRStatistics(lineCount: lines.count, characterCount: 2,
                 lowConfidenceLines: 0, partialReasons: [], completeRecognition: true))
         }
-        let good = OCRLine(text: "发送", confidence: 0.99, bounds: CGRect(x: 0.92, y: 0.93, width: 0.035, height: 0.03))
+        let good = OCRLine(text: "发送", confidence: 0.70, bounds: CGRect(x: 0.94, y: 0.95, width: 0.035, height: 0.03))
         let body = OCRLine(text: "发送", confidence: 0.99, bounds: CGRect(x: 0.5, y: 0.5, width: 0.035, height: 0.03))
+        let low = OCRLine(text: "发送", confidence: 0.64, bounds: good.bounds)
         XCTAssertNotNil(WeChatSendPolicy.sendButton(ocr([good, body])))
         XCTAssertNil(WeChatSendPolicy.sendButton(ocr([body])))
+        XCTAssertNil(WeChatSendPolicy.sendButton(ocr([low])))
         XCTAssertNil(WeChatSendPolicy.sendButton(ocr([good, good])))
     }
 }

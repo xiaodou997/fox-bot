@@ -9,7 +9,7 @@ use crate::{
     native_bridge::NativeConversationBinding,
     native_send::{
         MAX_SEND_UTF16, NativeReadFrame, NativeReadMessage, NativeSendChannel,
-        NativeSendObservation, NativeSendStats, supported_send_text,
+        NativeSendObservation, NativeSendStats, supported_send_text, validate_unattempted_receipt,
     },
     ownership::{DeviceOwner, private_directory},
 };
@@ -304,6 +304,44 @@ fn supported_reply(text: &str) -> bool {
     // Reject before ANY GUI write; never truncate or rewrite a model reply.
     supported_send_text(text)
 }
+
+fn confirmed_unattempted_send(directory: &Path) -> Result<bool> {
+    let report: serde_json::Value = read_private_json(&directory.join("last-report.json"))?;
+    let native = report.get("native").and_then(serde_json::Value::as_object);
+    Ok(report
+        .get("schema_version")
+        .and_then(serde_json::Value::as_str)
+        == Some("foxbot.g3c-reply-once.v1")
+        && report.get("status").and_then(serde_json::Value::as_str) == Some("UNKNOWN")
+        && report
+            .get("action_state")
+            .and_then(serde_json::Value::as_str)
+            == Some("UNKNOWN")
+        && native
+            .and_then(|value| value.get("last_status"))
+            .and_then(serde_json::Value::as_str)
+            == Some("SEND_BUTTON_UNAVAILABLE")
+        && native
+            .and_then(|value| value.get("fill_requests"))
+            .and_then(serde_json::Value::as_u64)
+            == Some(1)
+        && native
+            .and_then(|value| value.get("send_requests"))
+            .and_then(serde_json::Value::as_u64)
+            == Some(1)
+        && native
+            .and_then(|value| value.get("reconcile_requests"))
+            .and_then(serde_json::Value::as_u64)
+            == Some(0)
+        && native
+            .and_then(|value| value.get("write_attempted"))
+            .and_then(serde_json::Value::as_bool)
+            == Some(true)
+        && native
+            .and_then(|value| value.get("send_attempted"))
+            .and_then(serde_json::Value::as_bool)
+            == Some(false))
+}
 fn report(
     state: &RunState,
     runtime: &Runtime,
@@ -520,10 +558,7 @@ pub fn recover_filled(
     let service = config.service(&NativeCredentials)?;
     validate_state(&state, &config, &service)?;
     let mut runtime = config.open_runtime(&directory.join("runtime"))?;
-    if state.progress != Progress::Finished
-        || state.outcome != "UNKNOWN"
-        || directory.join("receipt.json").exists()
-    {
+    if state.progress != Progress::Finished || state.outcome != "UNKNOWN" {
         return Err(HostError::Untrusted);
     }
     let action_id = state.action_id.clone().ok_or(HostError::Untrusted)?;
@@ -531,11 +566,21 @@ pub fn recover_filled(
     if action_state != ActionState::Unknown || !supported_reply(&action.text) {
         return Err(HostError::Untrusted);
     }
+    let receipt_path = directory.join("receipt.json");
+    let unattempted_send = if receipt_path.exists() {
+        if !confirmed_unattempted_send(&directory)? {
+            return Err(HostError::Untrusted);
+        }
+        validate_unattempted_receipt(&receipt_path, &action, &state.binding)?;
+        true
+    } else {
+        false
+    };
     let mut channel = NativeSendChannel::start_filled_recovery(
         worker,
         state.binding.clone(),
         &owner,
-        directory.join("receipt.json"),
+        receipt_path,
         &action,
     )?;
     let first = channel.read_messages()?;
@@ -552,8 +597,11 @@ pub fn recover_filled(
     {
         return Err(HostError::Untrusted);
     }
-    let final_state =
-        runtime.recover_filled_send(&action_id, RunClock::default().now_ms(), &mut channel)?;
+    let final_state = if unattempted_send {
+        runtime.recover_unattempted_send(&action_id, RunClock::default().now_ms(), &mut channel)?
+    } else {
+        runtime.recover_filled_send(&action_id, RunClock::default().now_ms(), &mut channel)?
+    };
     state.outcome = serde_json::to_value(final_state)
         .map_err(|_| HostError::Config)?
         .as_str()
@@ -562,7 +610,11 @@ pub fn recover_filled(
     state.progress = Progress::Finished;
     write_private_json(&directory.join("run.json"), &state)?;
     let mut value = report(&state, &runtime, &channel.stats, 0)?;
-    value["recovery"] = serde_json::json!("EXISTING_FILLED_DRAFT_ONLY");
+    value["recovery"] = serde_json::json!(if unattempted_send {
+        "EXISTING_FILLED_DRAFT_AFTER_CONFIRMED_NO_CLICK"
+    } else {
+        "EXISTING_FILLED_DRAFT_ONLY"
+    });
     value["feedback_status"] = serde_json::json!("NOT_REQUIRED_OR_NOT_DUE");
     write_private_json(&directory.join("last-report.json"), &value)?;
     Ok(value)
