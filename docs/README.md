@@ -53,6 +53,7 @@ macOS 微信 G2 真实读取链已完成 Freeze；G3a 已证明测试级草稿�
 | [本地设置验收](acceptance/receipts/2026-10-03-local-settings.md) | 固定提交 16/16 回归、实际设置 HTTP 服务、浏览器呈现与未联调边界 |
 | [G3c-2 联调准备回执](acceptance/receipts/2026-10-01-g3c2-real-reply-readiness.md) | 166/61/117 回归与真实私聊只读通过；实际模型和真实自动回复待配置 |
 | [G3c-2 重绑定与基线回执](acceptance/receipts/2026-10-03-g3c2-session-rebind-arm.md) | 微信重启后受控刷新 application-session，连续上下文重叠 7 条；新 RUN 已 arm，模型与发送仍为 0 |
+| [G3c-2 真实 AI 回复收口](acceptance/receipts/2026-10-03-g3c2-real-ai-reply.md) | 单条真实 incoming、一次真实模型请求、既有草稿恢复发送与 VERIFIED_OUTGOING；同 RUN 重放模型/原生操作均为 0 |
 | [G3c-1 实现旧回执](acceptance/receipts/2026-10-01-g3c1-single-real-send.md) | 先前实现回归通过、测试会话未就绪时的历史记录 |
 | [G3c-1 首次真实发送与回执修复](acceptance/receipts/2026-10-01-g3c1-real-attempt-and-receipt-fix.md) | 实际发送一次、同 RUN 不重发；修复漏裁/时间分隔并通过 149/61/113 回归；保留当时 UNKNOWN/超时历史，当前收口见新回执 |
 | [G3b Safe Send Gate 旧回执](acceptance/receipts/2026-10-01-g3b-safe-send-gate.md) | 历史 Core/Host PASS 与旧 IME 条件下的 native BLOCKED；不是新版 Gate 回执 |
@@ -74,7 +75,7 @@ macOS 微信 G2 真实读取链已完成 Freeze；G3a 已证明测试级草稿�
 - `NOT_RUN / PASS / FAIL / BLOCKED / NA`：案例结果；NA 附理由，BLOCKED 不是 PASS。
 - `ACCEPTED`：某提交、设备/系统、应用版本、聊天类型、通道和模式已有通过回执。
 
-MC-WX 的 **G2 current-session 读取链**已有本机真实 PASS；G3a 已证明测试级 C06 fill。G3b 按独占运行修订；旧 IME 阻断不再适用，但不能把旧真机记录或新单测 READY 当作新版真实收发 PASS。G3c-1 受限短文本 C07/C08 已取得当前测试私聊真实闭环回执，同一任务重放零原生调用；其余首批适配器仍未取得对应真实回执，Android 微信是 `PROBE_ONLY`。
+MC-WX 的 **G2 current-session 读取链**已有本机真实 PASS；G3a 已证明测试级 C06 fill，G3b 按独占运行修订。G3c-1 受限短文本 C07/C08 已取得真实闭环；G3c-2 又在同一测试私聊完成一条真实 incoming → 真实 AI → 微信发送与同 RUN 零重放。该 ACCEPTED 范围不外推到长文、多行、持续值守、多会话或其它适配器；Android 微信仍是 `PROBE_ONLY`。
 
 ## 5. 文档变更规则
 
@@ -88,6 +89,6 @@ MC-WX 的 **G2 current-session 读取链**已有本机真实 PASS；G3a 已证�
 
 ## 6. 当前阶段和下一项
 
-**G3c-1 当前测试范围已收口**：新任务 853208 从 PREPARED 自动到 VERIFIED_OUTGOING；重放读取账本后返回，不再调用 native。Keychain 超时已定位并改为明确的无交互失败，历史 OCR 空格波动已与正文精确匹配分离；旧 UNKNOWN 保留且不重发。G3c-2 已接通新 incoming / HTTP ReplyProvider 单次代码入口，并接入多接口本地配置；默认使用明文 API Key 与普通 SQLite，最小设置页面支持增删改复制、默认选择和连接测试。真实模型与聊天端到端验收仍待实际接口就绪；不再要求用户先操作钥匙串。短单行限制仍保留，不把未验收的长文/多行算作支持。持续值守、多会话另行推进；不新增 IME 或人工并发输入专项。
+**G3c-2 当前单条测试范围已收口**：新 incoming 只调用真实 ReplyProvider 一次，回填后的 OCR 光标误识别被窄规则识别，既有草稿在不重新生成、不重新填入的条件下发送并达到 VERIFIED_OUTGOING；同 RUN 重放模型、读取、回填和发送均为 0。多接口本地配置、普通 SQLite 和设置页继续作为默认路径。下一步扩展多行/较长回复，再进入当前私聊持续值守与连续消息调度；多会话另行推进，不新增 IME 或人工并发输入专项。
 
 目标应用版本与定制服务脱敏样例可在联调时补充，不阻塞模拟开发；未取得对应证据之前，不承诺真实客户端兼容性。根目录 scripts/check_docs.py 可直接检查本地 Markdown 文件目标、JSON 示例和案例引用，不联网检查外部链接。

@@ -2,7 +2,7 @@
 
 - 日期：2026-10-01
 - 基线：G3c-1 已在测试私聊完成固定短回复发送与自动确认。
-- 本增量：单次联调入口 IMPLEMENTED / OFFLINE PASS，真实私聊只读检查通过；实际模型端到端待配置，见[本轮回执](../acceptance/receipts/2026-10-01-g3c2-real-reply-readiness.md)。不能继承离线 HTTP fixture 或 G3c-1 的真实发送 PASS。
+- 本增量：**单条真实端到端 PASS**。已在绑定测试私聊完成真实 incoming → 真实 AI → 原生发送 → VERIFIED_OUTGOING，并验证同 RUN 不重复；见[收口回执](../acceptance/receipts/2026-10-03-g3c2-real-ai-reply.md)。
 
 ## 1. 用户流程
 
@@ -31,11 +31,11 @@ IPC 更新为 `foxbot.native-send-worker.v4`，**读取/回执解析规则仍为
 
 模型调用之前将 generation claim 持久化；中断后不会自动再调用一次模型。HTTP 本增量仅允许 max_attempts=1 / max_in_flight=1。收到模型结果后重新读取，若会话、窗口、上下文变化或读取失败，拒绝写入。dispatch 还被固定到生成该回复时的消息上下文，避免把第一次“模型后读取”误当成新的无条件基线。
 
-每个 RUN 仅处理一次模型回复。已完成任务重放不再生成/回填/发送；UNKNOWN 且有发送前回执时仅只读核对；进程在生成中退出时返回 INTERRUPTED_NO_AUTOMATIC_RETRY。不会换 RUN 重试同一未知副作用，也不删除旧账本。此处是单条联调，不承诺多个不同 RUN 的跨任务全局去重或常驻调度。
+每个 RUN 仅处理一次模型回复。已完成任务重放不再生成/回填/发送；UNKNOWN 且有发送前回执时仅只读核对；进程在生成中退出时返回 INTERRUPTED_NO_AUTOMATIC_RETRY。唯一的显式恢复是 `fill_uncertain` 且尚无发送 receipt：它要求现有输入框正文与账本回复对应、上下文连续稳定、action 未超过 30 分钟，只发送既有草稿，不重新请求模型或 fill。不会换 RUN 重试同一未知副作用，也不删除旧账本。此处是单条联调，不承诺多个不同 RUN 的跨任务全局去重或常驻调度。
 
 ## 3. 支持范围
 
-**本次先接已有可靠写入器，正文仍限短单行、最多 80 UTF-16 单元。** 普通中文可以通过；长文、多行、复杂表情没有借这次“接模型”自动取得支持。超出范围返回 UNSUPPORTED_REPLY_NO_WRITE，已生成的完整回复保留在加密 Runtime 中，输入区写入/发送均为 0，不截断后发送。
+**本次先接已有可靠写入器，正文仍限短单行、最多 80 UTF-16 单元。** 普通中文可以通过；长文、多行、复杂表情没有借这次“接模型”自动取得支持。超出范围返回 UNSUPPORTED_REPLY_NO_WRITE，已生成的完整回复保留在 Runtime 中，输入区写入/发送均为 0，不截断后发送。
 
 模板的短回答 system_prompt 只属于普通模型的联调示例，不会强加给已配置的业务服务；模型不遵循字数或单行要求时也不能擅自缩短内容。正常长文本/多行支持作为后续独立增量。
 
@@ -117,8 +117,18 @@ target/debug/foxbot-host g3c-reply-once artifacts/local/g3c2.json \
 
 成功后再次执行同一个 once 命令可验证不重复生成/发送。不要通过再次 arm 或改 RUN 消除旧 UNKNOWN。Ctrl-C 在等待或模型请求时取消，不把本地取消当成服务端已经取消；原生调用期间取消在该有界调用返回后处理。
 
+若公开结果明确为 `UNKNOWN`、native `last_status=DRAFT_MISMATCH`、`send_requests=0`，且输入框仍保留 FoxBot 刚填入的完整草稿，不要重跑 once 或更换 RUN。仅在确认没有人工修改后使用：
+
+```bash
+target/debug/foxbot-host g3c-reply-recover-filled "$CONFIG" \
+  target/macos-probe/debug/foxbot-macos-send g2d-test ai001 \
+  --confirm-filled-draft-send
+```
+
+该入口会重新验证同一 action、同一条新增 incoming、连续两读、完整草稿和无 send receipt；任一条件不符都拒绝。它不会调用模型或再次填入。一般 UNKNOWN、已有 receipt、过期 action 或不同正文不能走该入口。
+
 ## 6. 本地证据与下一步
 
 旧 v1 联调状态位于 `target/g2d-real/<SESSION>/g3c-2/<RUN>/`，仍使用 SQLCipher。当前 v2 本地配置把任务保存到配置同级的 `runs/<SESSION>/<RUN>/`，上下文和完整 AI 回复使用普通 SQLite，无需账本密钥。run.json 保存选定接口 ID、配置摘要、绑定、历史签名和阶段，不保存聊天原文和 API Key；不同存储模式不隐式转换已有任务。公开报告只包含状态、model job 次数和 native 调用计数；BusinessV1 的反馈请求次数不混作模型生成次数。
 
-验收分别记录：离线真实 HTTP 协议＋合成 worker、真实微信只读检查、真实模型＋真实发送。前两项不能代替第三项。待真实配置可用，先完成一条短回复的端到端验收，再扩展多行/长文本，最后进入持续值守；不扩展 IME 或人工共编专项。
+验收分别记录：离线真实 HTTP 协议＋合成 worker、真实微信只读检查、真实模型＋真实发送。当前第三项已在一条短单行回复上通过。下一步扩展多行/长文本，随后进入当前私聊持续值守；不扩展 IME 或人工共编专项。

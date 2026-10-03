@@ -257,11 +257,12 @@ known_gaps:
 | 对象 | 实现 | 边界 |
 | --- | --- | --- |
 | 原生私有 read | IMPLEMENTED | 原文、方向与签名同一解析投影；仅私有 IPC，公开输出脱敏 |
-| arm / once | IMPLEMENTED | 不回填历史，仅处理一个新增 incoming；新版普通 SQLite 与先落盘的 generation claim，旧加密目录不转换 |
-| HTTP 回复与发送 | IMPLEMENTED | 复用 Chat Completions / BusinessV1，模型返回后重检上下文；真实模型验收待配置 |
-| 重放与拒绝分支 | IMPLEMENTED | 不再调用模型/发送；UNKNOWN只读核对；超长/多行不写入、不截断 |
+| arm / once | REAL PASS（单条私聊） | 不回填历史，仅处理一个新增 incoming；新版普通 SQLite 与先落盘的 generation claim，旧加密目录不转换 |
+| HTTP 回复与发送 | REAL PASS（单条短回复） | 真实 Chat Completions 请求 1 次；原生填入、单次发送并观察到匹配己方消息；不代表送达/已读 |
+| 填入不确定恢复 | REAL PASS（受限） | 仅 `UNKNOWN/fill_uncertain`、无 send receipt、原草稿精确对应、上下文稳定时发送既有草稿；不重新生成或 fill |
+| 重放与拒绝分支 | REAL PASS（同 RUN） | 完成后重放模型、read、inspect、fill、send 均为 0；超长/多行仍不写入、不截断 |
 
-详细步骤见[G3c-2 联调说明](../development/G3C2_REAL_REPLY.md)，实际结果见[联调准备回执](../acceptance/receipts/2026-10-01-g3c2-real-reply-readiness.md)：13/13 离线检查通过（166/61/117），原测试私聊 private read 通过。真实模型端到端待配置；离线协议测试不能自动提升为真实模型或持续值守 PASS。
+详细步骤见[G3c-2 联调说明](../development/G3C2_REAL_REPLY.md)。[真实 AI 回复收口回执](../acceptance/receipts/2026-10-03-g3c2-real-ai-reply.md)记录一次真实模型请求、VERIFIED_OUTGOING、同 RUN 零重放和 184/61/118 回归。该 PASS 仅覆盖已绑定测试私聊的一条短单行回复，不自动提升为持续值守、多会话或其它适配器支持。
 
 ### 多接口与本地设置（2026-10-03）
 
