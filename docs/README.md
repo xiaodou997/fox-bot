@@ -50,6 +50,7 @@ macOS 微信 G2 真实读取链已完成 Freeze；G3a 已证明测试级草稿�
 | [G3c-1 收口回执](acceptance/receipts/2026-10-01-g3c1-closeout.md) | 新任务自动 VERIFIED_OUTGOING，同 RUN 重放零原生调用；Keychain 超时修复、152/61/116 回归 |
 | [G3c-2 真实消息与 AI 回复联调](development/G3C2_REAL_REPLY.md) | 单次 arm→新消息→HTTP模型→原生发送确认；配置、幂等与未实测范围 |
 | [多接口与本地设置](development/LOCAL_SETTINGS.md) | 普通用户设置页、明文 API Key、SQLite、默认接口、连接测试与历史兼容 |
+| [本地设置验收](acceptance/receipts/2026-10-03-local-settings.md) | 固定提交 16/16 回归、实际设置 HTTP 服务、浏览器呈现与未联调边界 |
 | [G3c-2 联调准备回执](acceptance/receipts/2026-10-01-g3c2-real-reply-readiness.md) | 166/61/117 回归与真实私聊只读通过；实际模型和真实自动回复待配置 |
 | [G3c-1 实现旧回执](acceptance/receipts/2026-10-01-g3c1-single-real-send.md) | 先前实现回归通过、测试会话未就绪时的历史记录 |
 | [G3c-1 首次真实发送与回执修复](acceptance/receipts/2026-10-01-g3c1-real-attempt-and-receipt-fix.md) | 实际发送一次、同 RUN 不重发；修复漏裁/时间分隔并通过 149/61/113 回归；保留当时 UNKNOWN/超时历史，当前收口见新回执 |
